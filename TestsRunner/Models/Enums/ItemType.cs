@@ -5,6 +5,7 @@
         Assembly,
         Class,
         NestedClass,
-        Method
+        Method,
+        TestCase
     }
 }

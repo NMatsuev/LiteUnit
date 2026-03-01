@@ -39,8 +39,9 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
-    <Reference Include="TestedProject">
-      <HintPath>..\TestedProject\bin\Debug\TestedProject.exe</HintPath>
+    <Reference Include="TestedProject, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\TestedProject\bin\Debug\TestedProject.dll</HintPath>
     </Reference>
     <Reference Include="TestingLibrary">
       <HintPath>..\TestingLibrary\bin\Debug\TestingLibrary.dll</HintPath>

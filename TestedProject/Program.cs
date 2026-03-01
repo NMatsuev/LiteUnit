@@ -1,5 +1,6 @@
 ﻿using System;
 using Task10.Models;
+using TestedProject.Parser;
 
 namespace TestedProject
 {
@@ -7,21 +8,77 @@ namespace TestedProject
     {
         static void Main(string[] args)
         {
-            //Пределы интегрирования
-            const double startX = 1;
-            const double finishX = 9;
+            Console.WriteLine("=== Программа вычисления определенного интеграла ===");
+            Console.WriteLine();
 
-            //Точность вычисления
-            const double accuracy = 0.00001;
+            try
+            {
+                // Ввод функции
+                Console.WriteLine("Введите функцию от x (доступны: +, -, *, /, sin, cos, tg, ctg, pow, скобки)");
+                Console.WriteLine("Примеры: 2*x + sin(x), pow(x,2) + cos(x), x*tg(x)");
+                Console.Write("f(x) = ");
+                string functionInput = Console.ReadLine();
 
-            //Подынтегральная функция
-            Func<double, double> f = x => Math.Sqrt(x);
+                // Парсинг функции
+                var parser = new MathExpressionParser(functionInput);
+                Func<double, double> function = parser.Parse();
+                Console.WriteLine("Функция успешно распознана!");
+                Console.WriteLine();
 
-            LeftRectangleIntegralCalculator leftRectangleIntegralCalculator = new LeftRectangleIntegralCalculator();
-            TrapezoidIntegralCalculator trapezoidIntegralCalculator = new TrapezoidIntegralCalculator();
-            Console.WriteLine($"Интеграл в пределах от {startX} до {finishX} равен:\n" +
-                              $"Метод левых прямоугольников: {leftRectangleIntegralCalculator.Calculate(f, startX, finishX, accuracy):F3}\n" +
-                              $"Метод трапеций: {trapezoidIntegralCalculator.Calculate(f, startX, finishX, accuracy):F3}");
+                // Ввод пределов интегрирования
+                Console.Write("Введите нижний предел интегрирования a = ");
+                double startX = double.Parse(Console.ReadLine());
+
+                Console.Write("Введите верхний предел интегрирования b = ");
+                double finishX = double.Parse(Console.ReadLine());
+
+                // Ввод точности
+                Console.Write("Введите точность вычисления (например, 0.00001) = ");
+                double accuracy = double.Parse(Console.ReadLine());
+
+                Console.WriteLine();
+                Console.WriteLine($"Вычисление интеграла ∫ от {startX} до {finishX} функции:");
+                Console.WriteLine($"f(x) = {functionInput}");
+                Console.WriteLine($"с точностью {accuracy}");
+                Console.WriteLine(new string('-', 50));
+
+                // Вычисление интегралов
+                var leftRectangleCalculator = new LeftRectangleIntegralCalculator();
+                var trapezoidCalculator = new TrapezoidIntegralCalculator();
+
+                double leftResult = leftRectangleCalculator.Calculate(function, startX, finishX, accuracy);
+                double trapezoidResult = trapezoidCalculator.Calculate(function, startX, finishX, accuracy);
+
+                Console.WriteLine($"Метод левых прямоугольников: {leftResult:F10}");
+                Console.WriteLine($"Метод трапеций: {trapezoidResult:F10}");
+                Console.WriteLine($"Разность методов: {Math.Abs(leftResult - trapezoidResult):F10}");
+
+                // Проверка на возможную сходимость
+                if (Math.Abs(leftResult - trapezoidResult) < accuracy)
+                {
+                    Console.WriteLine("Результаты сошлись с заданной точностью!");
+                }
+                else
+                {
+                    Console.WriteLine("Результаты отличаются больше заданной точности. Возможно, требуется увеличить количество итераций.");
+                }
+            }
+            catch (FormatException)
+            {
+                Console.WriteLine("Ошибка: Неверный формат числа!");
+            }
+            catch (ArgumentException ex)
+            {
+                Console.WriteLine($"Ошибка в выражении: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Неожиданная ошибка: {ex.Message}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Нажмите любую клавишу для выхода...");
+            Console.ReadKey();
         }
     }
 }

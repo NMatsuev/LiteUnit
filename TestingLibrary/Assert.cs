@@ -5,7 +5,7 @@ namespace TestingLibrary
 {
     public static class Assert
     {
-        // Проверка на равенство
+        //Проверка на равенство
         public static void AreEqual<T>(T expected, T actual, string message = "")
         {
             if (!Equals(expected, actual))
@@ -14,7 +14,47 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка на неравенство
+        //Проверка на равенство для double с указанием точности
+        public static void AreEqual(double expected, double actual, double delta, string message = "")
+        {
+            if (Math.Abs(expected - actual) > delta)
+            {
+                throw new AssertionException(FormatMessage(message,
+                    $"Ожидалось: {expected} с точностью ±{delta}, но получено: {actual}. Разница: {Math.Abs(expected - actual)}"));
+            }
+        }
+
+        //Проверка на равенство для double с указанием точности
+        public static void AreEqual(float expected, float actual, float delta, string message = "")
+        {
+            if (Math.Abs(expected - actual) > delta)
+            {
+                throw new AssertionException(FormatMessage(message,
+                    $"Ожидалось: {expected} с точностью ±{delta}, но получено: {actual}. Разница: {Math.Abs(expected - actual)}"));
+            }
+        }
+
+        //Проверка на неравенство для double с указанием точности
+        public static void AreNotEqual(double expected, double actual, double delta, string message = "")
+        {
+            if (Math.Abs(expected - actual) <= delta)
+            {
+                throw new AssertionException(FormatMessage(message,
+                    $"Ожидалось: не {expected} с точностью ±{delta}, но получено: {actual}. Разница: {Math.Abs(expected - actual)}"));
+            }
+        }
+
+        //Проверка на неравенство для double с указанием точности
+        public static void AreNotEqual(float expected, float actual, float delta, string message = "")
+        {
+            if (Math.Abs(expected - actual) <= delta)
+            {
+                throw new AssertionException(FormatMessage(message,
+                    $"Ожидалось: не {expected} с точностью ±{delta}, но получено: {actual}. Разница: {Math.Abs(expected - actual)}"));
+            }
+        }
+
+        //Проверка на неравенство
         public static void AreNotEqual<T>(T expected, T actual, string message = "")
         {
             if (Equals(expected, actual))
@@ -23,7 +63,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка на идентичность ссылок
+        //Проверка на идентичность ссылок
         public static void AreSame(object expected, object actual, string message = "")
         {
             if (!ReferenceEquals(expected, actual))
@@ -32,7 +72,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка что ссылки разные
+        //Проверка что ссылки разные
         public static void AreNotSame(object expected, object actual, string message = "")
         {
             if (ReferenceEquals(expected, actual))
@@ -41,7 +81,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка на истинность
+        //Проверка на истинность
         public static void IsTrue(bool condition, string message = "")
         {
             if (!condition)
@@ -50,7 +90,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка на ложность
+        //Проверка на ложность
         public static void IsFalse(bool condition, string message = "")
         {
             if (condition)
@@ -59,7 +99,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка на null
+        //Проверка на null
         public static void IsNull(object obj, string message = "")
         {
             if (obj != null)
@@ -68,7 +108,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка что не null
+        //Проверка что не null
         public static void IsNotNull(object obj, string message = "")
         {
             if (obj == null)
@@ -77,7 +117,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка что объект является экземпляром типа
+        //Проверка что объект является экземпляром типа
         public static void IsInstanceOf<TExpected>(object obj, string message = "")
         {
             if (!(obj is TExpected))
@@ -87,7 +127,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка что объект НЕ является экземпляром типа
+        //Проверка что объект НЕ является экземпляром типа
         public static void IsNotInstanceOf<TNotExpected>(object obj, string message = "")
         {
             if (obj is TNotExpected)
@@ -97,7 +137,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка что метод/действие выбрасывает исключение
+        //Проверка что метод/действие выбрасывает исключение
         public static TException Catch<TException>(Action action, string message = "") where TException : Exception
         {
             try
@@ -118,7 +158,7 @@ namespace TestingLibrary
                 $"Ожидалось исключение: {typeof(TException).Name}, но исключение не было выброшено"));
         }
 
-        // Проверка что метод/действие выбрасывает любое исключение
+        //Проверка что метод/действие выбрасывает любое исключение
         public static Exception Catch(Action action, string message = "")
         {
             try
@@ -133,7 +173,7 @@ namespace TestingLibrary
             throw new AssertionException(FormatMessage(message, "Ожидалось исключение, но оно не было выброшено"));
         }
 
-        // Проверка что метод/действие НЕ выбрасывает исключение
+        //Проверка что метод/действие НЕ выбрасывает исключение
         public static void DoesNotThrow(Action action, string message = "")
         {
             try
@@ -147,19 +187,19 @@ namespace TestingLibrary
             }
         }
 
-        // Принудительное падение теста
+        //Принудительное падение теста
         public static void Fail(string message = "")
         {
             throw new AssertionException(FormatMessage(message, "Тест намеренно провален"));
         }
 
-        // Успешное завершение теста
+        //Успешное завершение теста
         public static void Pass(string message = "")
         {
             throw new SuccessException(FormatMessage(message, "Тест успешно завершен"));
         }
 
-        // Проверка на вхождение в коллекцию
+        //Проверка на вхождение в коллекцию
         public static void Contains(object expected, System.Collections.ICollection collection, string message = "")
         {
             if (collection == null)
@@ -175,7 +215,7 @@ namespace TestingLibrary
                 $"Коллекция не содержит элемент: {expected}"));
         }
 
-        // Проверка на пустую коллекцию
+        //Проверка на пустую коллекцию
         public static void IsEmpty(System.Collections.ICollection collection, string message = "")
         {
             if (collection == null)
@@ -188,7 +228,7 @@ namespace TestingLibrary
             }
         }
 
-        // Проверка что коллекция не пуста
+        //Проверка что коллекция не пуста
         public static void IsNotEmpty(System.Collections.ICollection collection, string message = "")
         {
             if (collection == null)
@@ -200,7 +240,7 @@ namespace TestingLibrary
             }
         }
 
-        // Вспомогательный метод для форматирования сообщения
+        //Вспомогательный метод для форматирования сообщения
         private static string FormatMessage(string userMessage, string defaultMessage)
         {
             return string.IsNullOrEmpty(userMessage) ? defaultMessage : $"{userMessage}: {defaultMessage}";

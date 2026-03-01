@@ -1,6 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.Reflection;
-using TestsRunner.Enums;
+using TestsRunner.Models.Enums;
 
 namespace TestsRunner.Models
 {
@@ -12,7 +12,7 @@ namespace TestsRunner.Models
         public ObservableCollection<TestMethodModel> Methods { get; set; } = new ObservableCollection<TestMethodModel>();
         public TestStatus Status { get; set; }
 
-        // Специальные методы NUnit
+        //Специальные методы
         public MethodInfo SetUpMethod { get; set; }
         public MethodInfo TearDownMethod { get; set; }
         public MethodInfo FixtureSetUpMethod { get; set; }

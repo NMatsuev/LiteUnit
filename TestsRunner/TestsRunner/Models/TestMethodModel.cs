@@ -1,5 +1,5 @@
 ﻿using System.Reflection;
-using TestsRunner.Enums;
+using TestsRunner.Models.Enums;
 
 namespace TestsRunner.Models
 {

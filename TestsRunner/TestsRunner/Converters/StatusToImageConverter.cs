@@ -1,18 +1,16 @@
 ﻿using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Media.Imaging;
-using TestsRunner.Enums;
+using TestsRunner.Models.Enums;
 
 namespace TestsRunner.Converters
 {
-    // Конвертер для отображения иконок статуса - ИЗМЕНЕНО на IValueConverter
     public class StatusToImageConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (value is TestStatus status)
             {
-                // Путь к изображениям зависит от того, где они хранятся в проекте
                 string imagePath = status switch
                 {
                     TestStatus.Passed => "../../../Images/test_passed.png",
@@ -23,7 +21,6 @@ namespace TestsRunner.Converters
 
                 try
                 {
-                    // Создаем BitmapImage с правильными настройками
                     var bitmap = new BitmapImage();
                     bitmap.BeginInit();
                     bitmap.UriSource = new Uri(imagePath, UriKind.RelativeOrAbsolute);
@@ -34,7 +31,6 @@ namespace TestsRunner.Converters
                 }
                 catch
                 {
-                    // В случае ошибки возвращаем null, Image просто не отобразится
                     return null;
                 }
             }

@@ -1,5 +1,5 @@
 ﻿using System.Collections.ObjectModel;
-using TestsRunner.Enums;
+using TestsRunner.Models.Enums;
 
 namespace TestsRunner.Models
 {

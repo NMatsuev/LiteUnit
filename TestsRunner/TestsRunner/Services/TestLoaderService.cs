@@ -51,17 +51,15 @@ namespace TestsRunner.Services
                 var testAttr = method.GetCustomAttributes().FirstOrDefault(a => a.GetType().Name == "TestAttribute");
                 if (testAttr != null)
                 {
-                    // Проверяем атрибут Ignore
                     var ignoreAttr = method.GetCustomAttributes().FirstOrDefault(a => a.GetType().Name == "IgnoreAttribute");
 
-                    if (ignoreAttr == null) // Не добавляем игнорируемые методы
+                    if (ignoreAttr == null) //Не добавляем игнорируемые методы
                     {
                         var methodModel = new TestMethodModel
                         {
                             MethodInfo = method
                         };
 
-                        // Загружаем категории
                         var categoryAttrs = method.GetCustomAttributes()
                             .Where(a => a.GetType().Name == "CategoryAttribute" || a.GetType().Name == "TestCategoryAttribute")
                             .ToList();
@@ -78,7 +76,6 @@ namespace TestsRunner.Services
                 }
             }
 
-            // Загружаем вложенные классы с атрибутом TestFixture
             var nestedTypes = type.GetNestedTypes(BindingFlags.Public)
                 .Where(t => t.GetCustomAttributes().Any(a => a.GetType().Name == "TestFixtureAttribute"));
 

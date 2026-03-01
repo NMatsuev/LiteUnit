@@ -1,4 +1,4 @@
-﻿namespace TestsRunner.Enums
+﻿namespace TestsRunner.Models.Enums
 {
     public enum ItemType
     {

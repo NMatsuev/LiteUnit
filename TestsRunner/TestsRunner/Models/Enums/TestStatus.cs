@@ -1,6 +1,6 @@
-﻿namespace TestsRunner.Enums
+﻿namespace TestsRunner.Models.Enums
 {
-    // Статусы тестов
+    //Статусы тестов
     public enum TestStatus
     {
         None,

@@ -9,9 +9,31 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Images\test_failed.png" />
+    <None Remove="Images\test_none.png" />
+    <None Remove="Images\test_passed.png" />
+    <None Remove="Images\test_running.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="TestingLibrary">
       <HintPath>..\..\TestingLibrary\bin\Debug\TestingLibrary.dll</HintPath>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Images\test_failed.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Images\test_none.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Images\test_passed.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Images\test_running.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
   </ItemGroup>
 
 </Project>

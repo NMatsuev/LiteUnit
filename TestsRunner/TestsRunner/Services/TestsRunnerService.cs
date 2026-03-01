@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
-using TestsRunner.Enums;
 using TestsRunner.Models;
+using TestsRunner.Models.Enums;
 
 namespace TestsRunner.Services
 {
@@ -12,20 +12,20 @@ namespace TestsRunner.Services
             {
                 testMethod.Status = TestStatus.Running;
 
-                // Создаем экземпляр класса
+                //Создаем экземпляр класса
                 var instance = Activator.CreateInstance(classModel.ClassType);
 
                 var stopwatch = Stopwatch.StartNew();
 
                 try
                 {
-                    // Выполняем FixtureSetUp если есть
+                    //Выполняем FixtureSetUp если есть
                     classModel.FixtureSetUpMethod?.Invoke(instance, null);
 
-                    // Выполняем SetUp если есть
+                    //Выполняем SetUp если есть
                     classModel.SetUpMethod?.Invoke(instance, null);
 
-                    // Выполняем тест
+                    //Выполняем тест
                     testMethod.MethodInfo.Invoke(instance, null);
 
                     testMethod.Status = TestStatus.Passed;
@@ -37,10 +37,10 @@ namespace TestsRunner.Services
                 }
                 finally
                 {
-                    // Выполняем TearDown если есть
+                    //Выполняем TearDown если есть
                     try { classModel.TearDownMethod?.Invoke(instance, null); } catch { }
 
-                    // Выполняем FixtureTearDown если есть
+                    //Выполняем FixtureTearDown если есть
                     try { classModel.FixtureTearDownMethod?.Invoke(instance, null); } catch { }
 
                     stopwatch.Stop();
@@ -64,10 +64,10 @@ namespace TestsRunner.Services
 
         public static void RunClassTests(TestClassModel classModel)
         {
-            // Сначала запускаем методы текущего класса
+            //Сначала запускаем методы текущего класса
             RunTests(classModel.Methods, classModel);
 
-            // Затем запускаем методы вложенных классов
+            //Затем запускаем методы вложенных классов
             foreach (var nestedClass in classModel.NestedClasses)
             {
                 RunClassTests(nestedClass);

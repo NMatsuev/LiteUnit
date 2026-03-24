@@ -6,7 +6,7 @@
         xmlns:converters="clr-namespace:TestsRunner.Converters"
         xmlns:viewModels="clr-namespace:TestsRunner.ViewModels.Implementations"
         mc:Ignorable="d"
-        Title="Test Runner" Height="450" Width="800"
+        Title="Test Runner" Height="450" Width="899"
         Background="#F5F0FF">
 
     <Window.DataContext>
@@ -21,6 +21,8 @@
         <SolidColorBrush x:Key="DarkPurple" Color="#4B0082"/>
 
         <converters:StatusToImageConverter x:Key="StatusToImageConverter"/>
+        <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+        <converters:TimeSpanToVisibilityConverter x:Key="TimeSpanToVisibilityConverter"/>
 
         <Style x:Key="PurpleButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource PrimaryPurple}"/>
@@ -154,21 +156,84 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
+                <!-- Кнопки слева -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <Button Content="Загрузить сборку" 
-                            Style="{StaticResource PurpleButtonStyle}"
-                            Command="{Binding LoadAssemblyCommand}"
-                            ToolTip="Загрузить новую тестовую сборку"/>
+                    Style="{StaticResource PurpleButtonStyle}"
+                    Command="{Binding LoadAssemblyCommand}"
+                    ToolTip="Загрузить новую тестовую сборку"/>
 
                     <Button Content="Удалить сборку" 
-                            Style="{StaticResource PurpleButtonStyle}"
-                            Command="{Binding DeleteAssemblyCommand}"
-                            ToolTip="Удалить выбранную сборку"/>
+                    Style="{StaticResource PurpleButtonStyle}"
+                    Command="{Binding DeleteAssemblyCommand}"
+                    ToolTip="Удалить выбранную сборку"/>
 
                     <Button Content="Запуск тестов" 
-                            Style="{StaticResource PurpleButtonStyle}"
-                            Command="{Binding RunSelectedTestsCommand}"
-                            ToolTip="Запустить выбранные тесты"/>
+                    Style="{StaticResource PurpleButtonStyle}"
+                    Command="{Binding RunSelectedTestsCommand}"
+                    ToolTip="Запустить выбранные тесты"/>
+
+                    <!-- Отображение времени выполнения -->
+                    <Border Background="{Binding IsRunning, Converter={StaticResource BoolToColorConverter}}"
+                    CornerRadius="5"
+                    Padding="10,5"
+                    Margin="10,0,0,0"
+                    Visibility="{Binding TotalExecutionTime, Converter={StaticResource TimeSpanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⏱️" 
+                              FontSize="16" 
+                              Margin="0,0,5,0"/>
+                            <TextBlock Text="{Binding TotalExecutionTimeDisplay}" 
+                              VerticalAlignment="Center"
+                              Foreground="{StaticResource DarkPurple}"
+                              FontWeight="Bold"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Панель управления параллелизмом (центр) -->
+                <StackPanel Grid.Column="1" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+
+                    <Border Background="{StaticResource VeryLightPurple}"
+                    CornerRadius="5"
+                    Padding="10,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Параллелизм:" 
+                              VerticalAlignment="Center"
+                              Foreground="{StaticResource DarkPurple}"
+                              Margin="0,0,5,0"/>
+
+                            <Button Content="-"
+                            Width="25"
+                            Height="25"
+                            Command="{Binding DecreaseParallelismCommand}"
+                            Background="{StaticResource LightPurple}"
+                            BorderThickness="0"
+                            Margin="2"/>
+
+                            <TextBlock Text="{Binding MaxParallelism}"
+                              Width="30"
+                              TextAlignment="Center"
+                              VerticalAlignment="Center"
+                              FontWeight="Bold"/>
+
+                            <Button Content="+"
+                            Width="25"
+                            Height="25"
+                            Command="{Binding IncreaseParallelismCommand}"
+                            Background="{StaticResource LightPurple}"
+                            BorderThickness="0"
+                            Margin="2"/>
+
+                            <CheckBox Content="Включить"
+                              IsChecked="{Binding IsParallelExecutionEnabled}"
+                              VerticalAlignment="Center"
+                              Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- Статистика справа -->
@@ -209,7 +274,7 @@
                             <!-- Пройдено -->
                             <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
                                 <Image Source="../Images/test_passed.png" 
-                       Width="16" Height="16" Margin="0,0,5,0"/>
+                               Width="16" Height="16" Margin="0,0,5,0"/>
                                 <TextBlock Text="{Binding PassedTests}" 
                                   VerticalAlignment="Center"
                                   Foreground="Green"
@@ -221,7 +286,7 @@
                             <!-- Не пройдено -->
                             <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
                                 <Image Source="../Images/test_failed.png" 
-                       Width="16" Height="16" Margin="0,0,5,0"/>
+                               Width="16" Height="16" Margin="0,0,5,0"/>
                                 <TextBlock Text="{Binding FailedTests}" 
                                   VerticalAlignment="Center"
                                   Foreground="Red"
@@ -233,7 +298,7 @@
                             <!-- Пропущено -->
                             <StackPanel Orientation="Horizontal">
                                 <Image Source="../Images/test_none.png" 
-                       Width="16" Height="16" Margin="0,0,5,0"/>
+                               Width="16" Height="16" Margin="0,0,5,0"/>
                                 <TextBlock Text="{Binding SkippedTests}"
                                   VerticalAlignment="Center"
                                   Foreground="Blue"
@@ -246,13 +311,13 @@
 
                     <!-- Информация о выбранных тестах -->
                     <Border Background="{StaticResource LightPurple}"
-                     CornerRadius="5"
-                     Padding="15,5"
-                     Margin="10,0,0,0">
+                    CornerRadius="5"
+                    Padding="15,5"
+                    Margin="10,0,0,0">
                         <TextBlock Text="{Binding SelectedCountText}" 
-                         VerticalAlignment="Center"
-                         Foreground="{StaticResource DarkPurple}"
-                         FontWeight="SemiBold"/>
+                          VerticalAlignment="Center"
+                          Foreground="{StaticResource DarkPurple}"
+                          FontWeight="SemiBold"/>
                     </Border>
                 </StackPanel>
             </Grid>

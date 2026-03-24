@@ -14,16 +14,27 @@ namespace TestsRunner.ViewModels.Implementations
 
         private readonly IDialogService _dialogService;
         private TreeViewItemBase _selectedItem;
+        private List<TreeViewItemBase> _selectedItems;
         private int _totalTests;
         private int _passedTests;
         private int _failedTests;
         private int _skippedTests;
         private int _selectedCount;
+        private int _maxParallelism = 1; //По умолчанию 1 (без параллелизма)
+        private bool _isParallelExecutionEnabled;
+        private TimeSpan _totalExecutionTime;
+        private bool _isRunning;
 
         #endregion
 
         #region Properties
         public ObservableCollection<TreeViewItemBase> TestAssemblies { get; }
+
+        public List<TreeViewItemBase> SelectedItems
+        {
+            get => _selectedItems;
+
+        }
 
         public TreeViewItemBase SelectedItem
         {
@@ -68,13 +79,66 @@ namespace TestsRunner.ViewModels.Implementations
         }
 
         public string SelectedCountText => $"Выбрано: {SelectedCount} {GetTestWord(SelectedCount)}";
+
+        public int MaxParallelism
+        {
+            get => _maxParallelism;
+            set
+            {
+                if (SetProperty(ref _maxParallelism, Math.Max(1, value))) //Минимум 1
+                {
+                    UpdateCanExecuteCommands();
+                }
+            }
+        }
+
+        public bool IsParallelExecutionEnabled
+        {
+            get => _isParallelExecutionEnabled;
+            set
+            {
+                if (SetProperty(ref _isParallelExecutionEnabled, value))
+                {
+                    UpdateCanExecuteCommands();
+                }
+            }
+        }
+
+        public TimeSpan TotalExecutionTime
+        {
+            get => _totalExecutionTime;
+            private set => SetProperty(ref _totalExecutionTime, value);
+        }
+
+        public string TotalExecutionTimeDisplay
+        {
+            get
+            {
+                if (_totalExecutionTime.TotalMilliseconds < 1000)
+                    return $"{_totalExecutionTime.TotalMilliseconds:F0} мс";
+                else if (_totalExecutionTime.TotalSeconds < 60)
+                    return $"{_totalExecutionTime.TotalSeconds:F2} с";
+                else
+                    return $"{_totalExecutionTime.TotalMinutes:F2} мин";
+            }
+        }
+
+        public bool IsRunning
+        {
+            get => _isRunning;
+            private set => SetProperty(ref _isRunning, value);
+        }
+
         #endregion
 
         #region Commands
-        // Команды
         public RelayCommand LoadAssemblyCommand { get; }
         public RelayCommand DeleteAssemblyCommand { get; }
         public RelayCommand RunSelectedTestsCommand { get; }
+        public RelayCommand IncreaseParallelismCommand { get; }
+        public RelayCommand DecreaseParallelismCommand { get; }
+        public RelayCommand ToggleParallelExecutionCommand { get; }
+
         #endregion
 
         #region Constructors
@@ -87,10 +151,13 @@ namespace TestsRunner.ViewModels.Implementations
             TestAssemblies = new ObservableCollection<TreeViewItemBase>();
             TestAssemblies.CollectionChanged += TestAssemblies_CollectionChanged;
 
-            // Инициализация команд
+            //Инициализация команд
             LoadAssemblyCommand = new RelayCommand(async () => await LoadAssemblyAsync());
             DeleteAssemblyCommand = new RelayCommand(DeleteAssembly, () => SelectedItem is AssemblyViewModel);
             RunSelectedTestsCommand = new RelayCommand(async () => await RunSelectedTestsAsync(), () => SelectedItem != null);
+            IncreaseParallelismCommand = new RelayCommand(() => MaxParallelism++);
+            DecreaseParallelismCommand = new RelayCommand(() => MaxParallelism = Math.Max(1, MaxParallelism - 1));
+            ToggleParallelExecutionCommand = new RelayCommand(() => IsParallelExecutionEnabled = !IsParallelExecutionEnabled);
         }
 
         #endregion
@@ -160,7 +227,7 @@ namespace TestsRunner.ViewModels.Implementations
 
             try
             {
-                //Определяем тип выбранного элемента и запускаем соответствующие тесты
+                //Определяем тип выбранного элемента
                 switch (SelectedItem)
                 {
                     case AssemblyViewModel assemblyVM:
@@ -185,7 +252,35 @@ namespace TestsRunner.ViewModels.Implementations
             }
         }
 
+        //Обобщенный метод для запуска тестов с учетом параллелизма
         private async Task RunTestsInternalAsync<T>(T item, Func<T, Task> runTestsFunc) where T : TreeViewItemBase
+        {
+            IsRunning = true;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            try
+            {
+                if (IsParallelExecutionEnabled && MaxParallelism > 1)
+                {
+                    await RunTestsParallelAsync(item);
+                }
+                else
+                {
+                    await RunTestsSequentialAsync(item, runTestsFunc);
+                }
+            }
+            finally
+            {
+                stopwatch.Stop();
+                TotalExecutionTime = stopwatch.Elapsed;
+                IsRunning = false;
+
+                // Обновляем отображение времени в UI
+                OnPropertyChanged(nameof(TotalExecutionTimeDisplay));
+            }
+        }
+
+        private async Task RunTestsSequentialAsync<T>(T item, Func<T, Task> runTestsFunc) where T : TreeViewItemBase
         {
             await Task.Run(async () =>
             {
@@ -207,14 +302,143 @@ namespace TestsRunner.ViewModels.Implementations
             });
         }
 
+        private async Task RunTestsParallelAsync<T>(T item) where T : TreeViewItemBase
+        {
+            await Task.Run(async () =>
+            {
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    SetRunningStatus(item);
+                    UpdateParentStatuses(item);
+                    UpdateOverallStatistics();
+                });
+
+                //Собираем все тесты для параллельного запуска
+                var testMethods = new List<(MethodViewModel method, ClassViewModel classVM)>();
+                CollectTestMethodsForParallel(item, testMethods);
+
+                if (!testMethods.Any())
+                    return;
+
+                //Создаем ограниченный параллелизм с помощью SemaphoreSlim
+                using (var semaphore = new SemaphoreSlim(MaxParallelism))
+                {
+                    var tasks = testMethods.Select(async test =>
+                    {
+                        await semaphore.WaitAsync();
+                        try
+                        {
+                            //Запускаем тест
+                            if (test.method.IsParameterized)
+                            {
+                                foreach (var testCase in test.method.Children.OfType<TestCaseViewModel>())
+                                {
+                                    await RunSingleTestCaseAsync(testCase, test.method, test.classVM);
+                                }
+                            }
+                            else
+                            {
+                                await RunSingleTestMethodAsync(test.method, test.classVM);
+                            }
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    });
+
+                    await Task.WhenAll(tasks);
+                }
+
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    UpdateFromModel(item);
+                    UpdateParentStatuses(item);
+                    UpdateOverallStatistics();
+                });
+            });
+        }
+
+        private void CollectTestMethodsForParallel(TreeViewItemBase item, List<(MethodViewModel, ClassViewModel)> methods)
+        {
+            switch (item)
+            {
+                case MethodViewModel methodVM:
+                    var parentClass = FindParentClass(methodVM);
+                    if (parentClass != null)
+                        methods.Add((methodVM, parentClass));
+                    break;
+
+                case ClassViewModel classVM:
+                    foreach (var child in classVM.Children.OfType<MethodViewModel>())
+                    {
+                        methods.Add((child, classVM));
+                    }
+                    foreach (var nestedClass in classVM.Children.OfType<ClassViewModel>())
+                    {
+                        CollectTestMethodsForParallel(nestedClass, methods);
+                    }
+                    break;
+
+                case AssemblyViewModel assemblyVM:
+                    foreach (var child in assemblyVM.Children)
+                    {
+                        CollectTestMethodsForParallel(child, methods);
+                    }
+                    break;
+            }
+        }
+
+        private async Task RunSingleTestMethodAsync(MethodViewModel methodVM, ClassViewModel classVM)
+        {
+            await Task.Run(async () =>
+            {
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    methodVM.Status = TestStatus.Running;
+                    UpdateClassStatus(classVM);
+                });
+
+                await TestRunnerService.RunTestAsync(methodVM.Method, classVM.Class);
+
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    methodVM.UpdateFromModel();
+                    UpdateClassStatus(classVM);
+                });
+            });
+        }
+
+        private async Task RunSingleTestCaseAsync(TestCaseViewModel testCaseVM, MethodViewModel methodVM, ClassViewModel classVM)
+        {
+            await Task.Run(async () =>
+            {
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    testCaseVM.Status = TestStatus.Running;
+                });
+
+                await TestRunnerService.RunTestCaseAsync(
+                    testCaseVM.TestCase,
+                    methodVM.Method.MethodInfo,
+                    classVM.Class);
+
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    testCaseVM.UpdateFromModel();
+                });
+            });
+        }
+
+        //Вспомогательные методы для запуска конкретных тестов
         private async Task RunAssemblyTestsAsync(AssemblyViewModel assemblyVM)
         {
-            await Task.Run(() => TestRunnerService.RunAssemblyTests(assemblyVM.Assembly));
+            await TestRunnerService.RunAssemblyTestsAsync(assemblyVM.Assembly);
         }
 
         private async Task RunClassTestsAsync(ClassViewModel classVM)
         {
-            await Task.Run(() => TestRunnerService.RunClassTests(classVM.Class));
+            await TestRunnerService.RunClassTestsAsync(classVM.Class);
         }
 
         private async Task RunSingleTestAsync(MethodViewModel methodVM)
@@ -238,9 +462,9 @@ namespace TestsRunner.ViewModels.Implementations
 
         private async Task RunParameterizedMethodAsync(MethodViewModel methodVM, ClassViewModel classVM)
         {
-            await Task.Run(() =>
+            await Task.Run(async () =>
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     methodVM.Status = TestStatus.Running;
                     foreach (var testCaseVM in methodVM.Children.OfType<TestCaseViewModel>())
@@ -252,28 +476,24 @@ namespace TestsRunner.ViewModels.Implementations
 
                 foreach (var testCaseVM in methodVM.Children.OfType<TestCaseViewModel>())
                 {
-                    TestRunnerService.RunTestCase(
+                    await TestRunnerService.RunTestCaseAsync(
                         testCaseVM.TestCase,
                         methodVM.Method.MethodInfo,
                         classVM.Class);
                 }
 
-                Application.Current.Dispatcher.Invoke(() =>
+                await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-
                     foreach (var testCaseVM in methodVM.Children.OfType<TestCaseViewModel>())
                     {
                         testCaseVM.UpdateFromModel();
                     }
-
                     methodVM.UpdateFromModel();
-
                     UpdateClassStatus(classVM);
                     if (classVM.Parent is AssemblyViewModel assemblyVM)
                     {
                         UpdateAssemblyStatus(assemblyVM);
                     }
-
                     UpdateOverallStatistics();
                 });
             });
@@ -281,17 +501,17 @@ namespace TestsRunner.ViewModels.Implementations
 
         private async Task RunOrdinaryMethodAsync(MethodViewModel methodVM, ClassViewModel classVM)
         {
-            await Task.Run(() =>
+            await Task.Run(async () =>
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     methodVM.Status = TestStatus.Running;
                     UpdateClassStatus(classVM);
                 });
 
-                TestRunnerService.RunTest(methodVM.Method, classVM.Class);
+                await TestRunnerService.RunTestAsync(methodVM.Method, classVM.Class);
 
-                Application.Current.Dispatcher.Invoke(() =>
+                await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     methodVM.UpdateFromModel();
                     UpdateClassStatus(classVM);
@@ -306,9 +526,8 @@ namespace TestsRunner.ViewModels.Implementations
 
         #endregion Run
 
-        #region UI
+        #region UI Update Methods
 
-        //Метод для установки статуса Running
         private void SetRunningStatus(TreeViewItemBase item)
         {
             switch (item)
@@ -348,7 +567,6 @@ namespace TestsRunner.ViewModels.Implementations
             }
         }
 
-        //Обновленный UpdateFromModel
         private void UpdateFromModel(TreeViewItemBase item)
         {
             switch (item)
@@ -377,7 +595,6 @@ namespace TestsRunner.ViewModels.Implementations
             }
         }
 
-        //Метод для обновления статусов родительских элементов
         private void UpdateParentStatuses(TreeViewItemBase item)
         {
             switch (item)
@@ -409,6 +626,7 @@ namespace TestsRunner.ViewModels.Implementations
                     break;
             }
         }
+
         private ClassViewModel FindParentClass(TreeViewItemBase item)
         {
             var current = item.Parent;
@@ -489,11 +707,44 @@ namespace TestsRunner.ViewModels.Implementations
             }
         }
 
+        private IEnumerable<TestCaseViewModel> GetAllTestCases(TreeViewItemBase item)
+        {
+            switch (item)
+            {
+                case TestCaseViewModel testCase:
+                    yield return testCase;
+                    break;
+
+                case MethodViewModel methodVM:
+                    if (methodVM.IsParameterized)
+                    {
+                        foreach (var child in methodVM.Children.OfType<TestCaseViewModel>())
+                        {
+                            yield return child;
+                        }
+                    }
+                    break;
+
+                case ClassViewModel classVM:
+                    foreach (var child in classVM.Children)
+                        foreach (var testCase in GetAllTestCases(child))
+                            yield return testCase;
+                    break;
+
+                case AssemblyViewModel assembly:
+                    foreach (var child in assembly.Children)
+                        foreach (var testCase in GetAllTestCases(child))
+                            yield return testCase;
+                    break;
+            }
+        }
+
         private void UpdateSelectedCount()
         {
             if (SelectedItem == null)
             {
                 SelectedCount = 0;
+                OnPropertyChanged(nameof(SelectedCountText));
                 return;
             }
 
@@ -517,6 +768,12 @@ namespace TestsRunner.ViewModels.Implementations
             Collect(SelectedItem);
             SelectedCount = methods.Count;
             OnPropertyChanged(nameof(SelectedCountText));
+        }
+
+        private void UpdateCanExecuteCommands()
+        {
+            DeleteAssemblyCommand.RaiseCanExecuteChanged();
+            RunSelectedTestsCommand.RaiseCanExecuteChanged();
         }
 
         private void TestAssemblies_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)

@@ -14,24 +14,11 @@ namespace TestsRunner.Models
         public string[] Categories { get; set; }
         public bool IsIgnored { get; set; }
         public string IgnoreReason { get; set; }
-
         public bool IsAsync => MethodInfo.GetCustomAttribute<AsyncStateMachineAttribute>() != null;
-
-        public List<TestCaseData> TestCases { get; set; } = new List<TestCaseData>();
-
+        public List<TestCaseModel> TestCases { get; set; } = new List<TestCaseModel>();
         public bool IsParameterized => TestCases.Any();
-    }
-
-
-    public class TestCaseData
-    {
-        public object[] Arguments { get; set; }
-        public string DisplayName { get; set; }
-        public TestStatus Status { get; set; }
-        public string ErrorMessage { get; set; }
-        public TimeSpan Duration { get; set; }
-
-        public string DisplayString =>
-            DisplayName ?? $"({string.Join(", ", Arguments ?? Array.Empty<object>())})";
+        public int? CancelAfterTimeout { get; set; }
+        public bool HasCancelAfter => CancelAfterTimeout.HasValue && CancelAfterTimeout.Value > 0;
+        public CancellationTokenSource CancellationTokenSource { get; set; }
     }
 }

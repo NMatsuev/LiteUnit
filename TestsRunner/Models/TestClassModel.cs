@@ -17,5 +17,7 @@ namespace TestsRunner.Models
         public MethodInfo TearDownMethod { get; set; }
         public MethodInfo FixtureSetUpMethod { get; set; }
         public MethodInfo FixtureTearDownMethod { get; set; }
+        public int? CancelAfterTimeout { get; set; }
+        public bool HasCancelAfter => CancelAfterTimeout.HasValue && CancelAfterTimeout.Value > 0;
     }
 }

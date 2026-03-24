@@ -51,7 +51,7 @@ namespace TestsRunner.ViewModels.Implementations
                     if (_duration.TotalSeconds >= 1)
                         return $"{_duration.TotalSeconds:F2} с";
                     else
-                        return $"{_duration.TotalMilliseconds:F0} мс";
+                        return $"{_duration.TotalMilliseconds:F2} мс";
                 }
                 return string.Empty;
             }

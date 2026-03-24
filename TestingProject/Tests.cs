@@ -264,9 +264,9 @@ namespace TestingProject
                 {
                     _parser = new MathExpressionParser(expr);
                     _function = _parser.Parse();
-                    Thread.Sleep(2000);
                     results.Add(_function(x));
-                }
+                };
+                Thread.Sleep(6000);
             });
 
             //Assert

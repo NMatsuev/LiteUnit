@@ -9,73 +9,132 @@ namespace TestsRunner.Services
 {
     public static class TestRunnerService
     {
-        private static async Task InvokeMethodAsync(MethodInfo method, object instance, object[] parameters = null)
+        // Универсальный метод для вызова метода с поддержкой отмены
+        private static async Task InvokeMethodAsync(MethodInfo method, object instance, object[] parameters, CancellationToken cancellationToken)
         {
             if (method == null) return;
 
             try
             {
-                var result = method.Invoke(instance, parameters ?? Array.Empty<object>());
+                // Подготавливаем параметры с учетом CancellationToken
+                var preparedParams = PrepareMethodParameters(method, parameters, cancellationToken);
+                var result = method.Invoke(instance, preparedParams);
 
-                //Обработка асинхронных методов
+                //Проверка для синхронных методов
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(
+                        $"Метод {method.Name} отменен по таймауту (синхронный метод)",
+                        cancellationToken);
+                }
+
+                // Обработка асинхронных методов
                 if (result != null)
                 {
-                    //Task / Task<T>
                     if (result is Task task)
                     {
-                        await task;
+                        // Используем Task.WhenAny для отслеживания отмены
+                        var completedTask = await Task.WhenAny(task,
+                            Task.Delay(-1, cancellationToken).ContinueWith(t => { }, cancellationToken));
+
+                        if (completedTask == task)
+                        {
+                            await task;
+                        }
+                        else
+                        {
+                            throw new OperationCanceledException(
+                                $"Метод {method.Name} отменен по таймауту", cancellationToken);
+                        }
+                    }
+                    else if (result.GetType().IsGenericType &&
+                             result.GetType().GetGenericTypeDefinition() == typeof(ValueTask<>))
+                    {
+                        dynamic dynamicResult = result;
+                        await dynamicResult.AsTask();
+                    }
+                    else if (result is ValueTask valueTask)
+                    {
+                        await valueTask.AsTask();
                     }
                 }
-                //Для async void методов
                 else if (method.ReturnType == typeof(void) &&
                          method.GetCustomAttribute<AsyncStateMachineAttribute>() != null)
                 {
-                    Debug.WriteLine($"Внимание: метод {method.Name} - async void, " +
-                                   "рекомендуется использовать async Task");
+                    Debug.WriteLine($"Внимание: метод {method.Name} - async void, отмена не поддерживается");
                 }
             }
             catch (TargetInvocationException ex)
             {
-                //Разворачиваем исключение, чтобы получить оригинальное
-                if (ex.InnerException != null)
-                    throw ex.InnerException;
+                if (ex.InnerException != null) throw ex.InnerException;
                 throw;
             }
         }
 
-        //Запуск одного тест-кейса (синхронно)
-        public static void RunTestCase(TestCaseData testCase, MethodInfo method, TestClassModel classModel)
+        private static object[] PrepareMethodParameters(MethodInfo method, object[] providedParams, CancellationToken token)
         {
-            RunTestCaseAsync(testCase, method, classModel).GetAwaiter().GetResult();
+            if (method == null) return null;
+
+            var parameters = method.GetParameters();
+            if (parameters.Length == 0) return null;
+
+            var result = new object[parameters.Length];
+            int providedIndex = 0;
+
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                if (parameters[i].ParameterType == typeof(CancellationToken))
+                {
+                    result[i] = token;
+                }
+                else if (providedParams != null && providedIndex < providedParams.Length)
+                {
+                    result[i] = providedParams[providedIndex++];
+                }
+                else
+                {
+                    result[i] = GetDefaultValue(parameters[i].ParameterType);
+                }
+            }
+
+            return result;
         }
 
-        //Запуск одного тест-кейса (асинхронно)
-        public static async Task RunTestCaseAsync(TestCaseData testCase, MethodInfo method, TestClassModel classModel)
+        private static object GetDefaultValue(Type type) => type.IsValueType ? Activator.CreateInstance(type) : null;
+
+        // Запуск тест-кейса с поддержкой отмены
+        public static async Task RunTestCaseAsync(TestCaseModel testCase, MethodInfo method, TestClassModel classModel)
         {
             object instance = null;
+
+            // Создаем CancellationTokenSource для этого тест-кейса
+            using var cts = testCase.HasCancelAfter
+                ? new CancellationTokenSource(testCase.CancelAfterTimeout.Value)
+                : null;
+
+            testCase.CancellationTokenSource = cts;
 
             try
             {
                 testCase.Status = TestStatus.Running;
-
-                //Создаем экземпляр класса для теста
                 instance = Activator.CreateInstance(classModel.ClassType);
-
                 var stopwatch = Stopwatch.StartNew();
+                var token = cts?.Token ?? CancellationToken.None;
 
                 try
                 {
-                    //Выполняем SetUp перед тестом
-                    await InvokeMethodAsync(classModel.SetUpMethod, instance);
-
-                    //Выполняем тест с параметрами
-                    await InvokeMethodAsync(method, instance, testCase.Arguments);
-
+                    await InvokeMethodAsync(classModel.SetUpMethod, instance, null, token);
+                    await InvokeMethodAsync(method, instance, testCase.Arguments, token);
                     testCase.Status = TestStatus.Passed;
+                }
+                catch (OperationCanceledException)
+                {
+                    testCase.Status = TestStatus.Failed;
+                    testCase.ErrorMessage = $"Тест отменен по таймауту ({testCase.CancelAfterTimeout} мс)";
+                    Debug.WriteLine($"Тест {method.Name} отменен по таймауту");
                 }
                 catch (SuccessException)
                 {
-                    //Assert.Pass был вызван - тест успешен
                     testCase.Status = TestStatus.Passed;
                     Debug.WriteLine($"Тест {method.Name} успешно завершен через Assert.Pass");
                 }
@@ -86,9 +145,7 @@ namespace TestsRunner.Services
                 }
                 finally
                 {
-                    //Выполняем TearDown после теста
-                    try { await InvokeMethodAsync(classModel.TearDownMethod, instance); } catch { }
-
+                    try { await InvokeMethodAsync(classModel.TearDownMethod, instance, null, CancellationToken.None); } catch { }
                     stopwatch.Stop();
                     testCase.Duration = stopwatch.Elapsed;
                 }
@@ -98,9 +155,13 @@ namespace TestsRunner.Services
                 testCase.Status = TestStatus.Failed;
                 testCase.ErrorMessage = ex.Message;
             }
+            finally
+            {
+                testCase.CancellationTokenSource = null;
+            }
         }
 
-        //Запуск параметризованного метода (асинхронно)
+        // Запуск параметризованного метода
         public static async Task RunParameterizedMethodAsync(TestMethodModel testMethod, TestClassModel classModel)
         {
             foreach (var testCase in testMethod.TestCases)
@@ -109,39 +170,39 @@ namespace TestsRunner.Services
             }
         }
 
-        //Запуск одного тестового метода (синхронно)
-        public static void RunTest(TestMethodModel testMethod, TestClassModel classModel)
-        {
-            RunTestAsync(testMethod, classModel).GetAwaiter().GetResult();
-        }
-
-        //Запуск одного тестового метода (асинхронно)
+        // Запуск одного тестового метода с поддержкой отмены
         public static async Task RunTestAsync(TestMethodModel testMethod, TestClassModel classModel)
         {
             object instance = null;
 
+            // Создаем CancellationTokenSource для этого теста
+            using var cts = testMethod.HasCancelAfter
+                ? new CancellationTokenSource(testMethod.CancelAfterTimeout.Value)
+                : null;
+
+            testMethod.CancellationTokenSource = cts;
+
             try
             {
                 testMethod.Status = TestStatus.Running;
-
-                //Создаем экземпляр класса для теста
                 instance = Activator.CreateInstance(classModel.ClassType);
-
                 var stopwatch = Stopwatch.StartNew();
+                var token = cts?.Token ?? CancellationToken.None;
 
                 try
                 {
-                    //Выполняем SetUp перед тестом
-                    await InvokeMethodAsync(classModel.SetUpMethod, instance);
-
-                    // Выполняем тест
-                    await InvokeMethodAsync(testMethod.MethodInfo, instance);
-
+                    await InvokeMethodAsync(classModel.SetUpMethod, instance, null, token);
+                    await InvokeMethodAsync(testMethod.MethodInfo, instance, null, token);
                     testMethod.Status = TestStatus.Passed;
+                }
+                catch (OperationCanceledException)
+                {
+                    testMethod.Status = TestStatus.Failed;
+                    testMethod.ErrorMessage = $"Тест отменен по таймауту ({testMethod.CancelAfterTimeout} мс)";
+                    Debug.WriteLine($"Тест {testMethod.MethodName} отменен по таймауту");
                 }
                 catch (SuccessException)
                 {
-                    //Assert.Pass был вызван - тест успешен
                     testMethod.Status = TestStatus.Passed;
                     Debug.WriteLine($"Тест {testMethod.MethodName} успешно завершен через Assert.Pass");
                 }
@@ -152,9 +213,7 @@ namespace TestsRunner.Services
                 }
                 finally
                 {
-                    //Выполняем TearDown после теста
-                    try { await InvokeMethodAsync(classModel.TearDownMethod, instance); } catch { }
-
+                    try { await InvokeMethodAsync(classModel.TearDownMethod, instance, null, CancellationToken.None); } catch { }
                     stopwatch.Stop();
                     testMethod.Duration = stopwatch.Elapsed;
                 }
@@ -164,16 +223,23 @@ namespace TestsRunner.Services
                 testMethod.Status = TestStatus.Failed;
                 testMethod.ErrorMessage = ex.Message;
             }
+            finally
+            {
+                testMethod.CancellationTokenSource = null;
+            }
         }
 
-        public static void RunClassTests(TestClassModel classModel)
-        {
-            RunClassTestsAsync(classModel).GetAwaiter().GetResult();
-        }
-
+        // Запуск всех тестов класса с поддержкой отмены на уровне класса
         public static async Task RunClassTestsAsync(TestClassModel classModel)
         {
             object fixtureInstance = null;
+
+            // Создаем CTS для класса, если есть CancelAfter
+            using var classCts = classModel.HasCancelAfter
+                ? new CancellationTokenSource(classModel.CancelAfterTimeout.Value)
+                : null;
+
+            var classToken = classCts?.Token ?? CancellationToken.None;
 
             try
             {
@@ -186,11 +252,15 @@ namespace TestsRunner.Services
 
                     try
                     {
-                        await InvokeMethodAsync(classModel.FixtureSetUpMethod, fixtureInstance);
+                        await InvokeMethodAsync(classModel.FixtureSetUpMethod, fixtureInstance, null, classToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Debug.WriteLine("TestFixtureSetUp отменен по таймауту");
+                        throw;
                     }
                     catch (SuccessException)
                     {
-                        // TestFixtureSetUp может тоже содержать Assert.Pass
                         Debug.WriteLine("TestFixtureSetUp успешно завершен через Assert.Pass");
                     }
                 }
@@ -198,6 +268,12 @@ namespace TestsRunner.Services
                 // Запускаем методы
                 foreach (var method in classModel.Methods)
                 {
+                    // Если у метода нет своего CancelAfter, но есть у класса, устанавливаем
+                    if (!method.HasCancelAfter && classModel.HasCancelAfter)
+                    {
+                        method.CancelAfterTimeout = classModel.CancelAfterTimeout;
+                    }
+
                     if (method.IsParameterized)
                     {
                         await RunParameterizedMethodAsync(method, classModel);
@@ -214,10 +290,6 @@ namespace TestsRunner.Services
                     await RunClassTestsAsync(nestedClass);
                 }
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Ошибка в TestFixtureSetUp: {ex.Message}");
-            }
             finally
             {
                 // TestFixtureTearDown
@@ -226,8 +298,7 @@ namespace TestsRunner.Services
                     if (classModel.FixtureTearDownMethod != null)
                     {
                         var tearDownInstance = classModel.FixtureTearDownMethod.IsStatic ? null : fixtureInstance;
-
-                        await InvokeMethodAsync(classModel.FixtureTearDownMethod, tearDownInstance);
+                        await InvokeMethodAsync(classModel.FixtureTearDownMethod, tearDownInstance, null, CancellationToken.None);
                     }
                 }
                 catch (Exception ex)
@@ -235,11 +306,6 @@ namespace TestsRunner.Services
                     Debug.WriteLine($"Ошибка в TestFixtureTearDown: {ex.Message}");
                 }
             }
-        }
-
-        public static void RunAssemblyTests(TestAssemblyModel assemblyModel)
-        {
-            RunAssemblyTestsAsync(assemblyModel).GetAwaiter().GetResult();
         }
 
         public static async Task RunAssemblyTestsAsync(TestAssemblyModel assemblyModel)

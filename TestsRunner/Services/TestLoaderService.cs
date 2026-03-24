@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.IO;
 using System.Reflection;
 using TestsRunner.Models;
 
@@ -47,6 +46,18 @@ namespace TestsRunner.Services
             classModel.FixtureSetUpMethod = GetMethodByAttribute(type, "TestFixtureSetUpAttribute");
             classModel.FixtureTearDownMethod = GetMethodByAttribute(type, "TestFixtureTearDownAttribute");
 
+            // Загружаем CancelAfter для класса
+            var classCancelAfterAttr = type.GetCustomAttributes()
+            .FirstOrDefault(a => a.GetType().Name == "CancelAfterAttribute");
+            if (classCancelAfterAttr != null)
+            {
+                var timeoutProp = classCancelAfterAttr.GetType().GetProperty("Timeout");
+                if (timeoutProp != null)
+                {
+                    classModel.CancelAfterTimeout = timeoutProp.GetValue(classCancelAfterAttr) as int?;
+                }
+            }
+
             //Загружаем тестовые методы
             var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
 
@@ -61,7 +72,7 @@ namespace TestsRunner.Services
                 {
                     //Проверяем на Ignore
                     var ignoreAttr = attributes.FirstOrDefault(a => a.GetType().Name == "IgnoreAttribute");
-                    if (ignoreAttr != null) continue; //Пропускаем игнорируемые методы
+                    if (ignoreAttr != null) continue; 
 
                     var methodModel = new TestMethodModel
                     {
@@ -80,6 +91,20 @@ namespace TestsRunner.Services
                             .ToArray();
                     }
 
+                    var cancelAfterAttr = attributes.FirstOrDefault(a => a.GetType().Name == "CancelAfterAttribute");
+                    if (cancelAfterAttr != null)
+                    {
+                        var timeoutProp = cancelAfterAttr.GetType().GetProperty("Timeout");
+                        if (timeoutProp != null)
+                        {
+                            methodModel.CancelAfterTimeout = timeoutProp.GetValue(cancelAfterAttr) as int?;
+                        }
+                    }
+                    else if (classModel.HasCancelAfter) // Если нет своего, используем классовый
+                    {
+                        methodModel.CancelAfterTimeout = classModel.CancelAfterTimeout;
+                    }
+
                     //Получаем все TestCase атрибуты
                     var testCaseAttrs = attributes
                         .Where(a => a.GetType().Name == "TestCaseAttribute")
@@ -92,13 +117,13 @@ namespace TestsRunner.Services
                             var testCase = CreateTestCaseFromAttribute(testCaseAttr, method);
                             if (testCase != null)
                             {
+                                testCase.CancelAfterTimeout = methodModel.CancelAfterTimeout;
                                 methodModel.TestCases.Add(testCase);
                             }
                         }
                     }
 
                     //Для обычных тестов TestCases остается пустым
-
                     classModel.Methods.Add(methodModel);
                 }
             }
@@ -116,25 +141,25 @@ namespace TestsRunner.Services
             return classModel;
         }
 
-        private static TestCaseData CreateTestCaseFromAttribute(object attribute, MethodInfo method)
+        private static TestCaseModel CreateTestCaseFromAttribute(object attribute, MethodInfo method)
         {
             try
             {
-                var testCaseData = new TestCaseData();
+                var TestCaseModel = new TestCaseModel();
                 var type = attribute.GetType();
 
                 //Получаем аргументы из конструктора атрибута
                 var argumentsField = type.GetField("_testParams", BindingFlags.NonPublic | BindingFlags.Instance);
                 if (argumentsField != null)
                 {
-                    testCaseData.Arguments = argumentsField.GetValue(attribute) as object[] ?? Array.Empty<object>();
+                    TestCaseModel.Arguments = argumentsField.GetValue(attribute) as object[] ?? Array.Empty<object>();
                 }
                 else
                 {
                     var argumentsProp = type.GetProperty("TestParams");
                     if (argumentsProp != null)
                     {
-                        testCaseData.Arguments = argumentsProp.GetValue(attribute) as object[] ?? Array.Empty<object>();
+                        TestCaseModel.Arguments = argumentsProp.GetValue(attribute) as object[] ?? Array.Empty<object>();
                     }
                 }
 
@@ -142,10 +167,10 @@ namespace TestsRunner.Services
                 var testNameProp = type.GetProperty("TestName");
                 if (testNameProp != null)
                 {
-                    testCaseData.DisplayName = testNameProp.GetValue(attribute)?.ToString();
+                    TestCaseModel.DisplayName = testNameProp.GetValue(attribute)?.ToString();
                 }
 
-                return testCaseData;
+                return TestCaseModel;
             }
             catch (Exception ex)
             {

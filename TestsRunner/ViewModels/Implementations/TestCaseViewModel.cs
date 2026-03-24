@@ -5,17 +5,17 @@ namespace TestsRunner.ViewModels.Implementations
 {
     public class TestCaseViewModel : TreeViewItemBase
     {
-        private TestCaseData _testCase;
-        private string _methodName;
+        private readonly TestCaseModel _testCase;
+        private readonly string _methodName;
 
-        public TestCaseViewModel(TestCaseData testCase, string methodName)
+        public TestCaseViewModel(TestCaseModel testCase, string methodName)
         {
             _testCase = testCase;
             _methodName = methodName;
             DisplayName = testCase.DisplayString;
         }
 
-        public TestCaseData TestCase => _testCase;
+        public TestCaseModel TestCase => _testCase;
 
         public override ItemType ItemType => ItemType.TestCase;
 
@@ -28,7 +28,7 @@ namespace TestsRunner.ViewModels.Implementations
                     if (_testCase.Duration.TotalSeconds >= 1)
                         return $"{_testCase.Duration.TotalSeconds:F2} с";
                     else
-                        return $"{_testCase.Duration.TotalMilliseconds:F0} мс";
+                        return $"{_testCase.Duration.TotalMilliseconds:F2} мс";
                 }
                 return string.Empty;
             }

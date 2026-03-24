@@ -5,7 +5,7 @@ namespace TestsRunner.ViewModels.Implementations
 {
     public class AssemblyViewModel : TreeViewItemBase
     {
-        private TestAssemblyModel _assembly;
+        private readonly TestAssemblyModel _assembly;
 
         public AssemblyViewModel(TestAssemblyModel assembly)
         {

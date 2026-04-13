@@ -16,6 +16,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="CustomThreadPool">
+      <HintPath>..\CustomThreadPool\bin\Debug\net8.0\CustomThreadPool.dll</HintPath>
+    </Reference>
     <Reference Include="TestingLibrary">
       <HintPath>..\TestingLibrary\bin\Debug\TestingLibrary.dll</HintPath>
     </Reference>

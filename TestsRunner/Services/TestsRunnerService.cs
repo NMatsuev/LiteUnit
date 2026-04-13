@@ -28,12 +28,11 @@ namespace TestsRunner.Services
                         cancellationToken);
                 }
 
-                // Обработка асинхронных методов
+                //Обработка асинхронных методов
                 if (result != null)
                 {
                     if (result is Task task)
                     {
-                        // Используем Task.WhenAny для отслеживания отмены
                         var completedTask = await Task.WhenAny(task,
                             Task.Delay(-1, cancellationToken).ContinueWith(t => { }, cancellationToken));
 

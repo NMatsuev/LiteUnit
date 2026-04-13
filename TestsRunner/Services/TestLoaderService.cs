@@ -32,7 +32,6 @@ namespace TestsRunner.Services
             }
         }
 
-
         private static TestClassModel LoadClass(Type type)
         {
             var classModel = new TestClassModel

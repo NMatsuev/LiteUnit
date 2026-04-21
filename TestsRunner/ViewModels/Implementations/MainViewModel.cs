@@ -1,10 +1,11 @@
 ﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Windows;
-using TestsRunner.Models;
-using TestsRunner.Services;
+using CustomThreadPool.Model;
 using TestsRunner.Helpers;
+using TestsRunner.Models;
 using TestsRunner.Models.Enums;
+using TestsRunner.Services;
 
 namespace TestsRunner.ViewModels.Implementations
 {
@@ -20,10 +21,16 @@ namespace TestsRunner.ViewModels.Implementations
         private int _failedTests;
         private int _skippedTests;
         private int _selectedCount;
+        private int _minParallelism = 1;
         private int _maxParallelism = 1; //По умолчанию 1 (без параллелизма)
         private bool _isParallelExecutionEnabled;
         private TimeSpan _totalExecutionTime;
         private bool _isRunning;
+
+        private ThreadPoolStatsModel _threadPoolStats;
+        private ObservableCollection<ThreadPoolErrorModel> _threadPoolErrors;
+        private ThreadPoolErrorModel _selectedThreadPoolError;
+        private CustomThreadPool.CustomThreadPool _currentThreadPool;
 
         #endregion
 
@@ -92,6 +99,18 @@ namespace TestsRunner.ViewModels.Implementations
             }
         }
 
+        public int MinParallelism
+        {
+            get => _minParallelism;
+            set
+            {
+                if (SetProperty(ref _minParallelism, Math.Max(1, value))) //Минимум 1
+                {
+                    UpdateCanExecuteCommands();
+                }
+            }
+        }
+
         public bool IsParallelExecutionEnabled
         {
             get => _isParallelExecutionEnabled;
@@ -129,15 +148,47 @@ namespace TestsRunner.ViewModels.Implementations
             private set => SetProperty(ref _isRunning, value);
         }
 
+        // Новые свойства для пула потоков
+        public ThreadPoolStatsModel ThreadPoolStats
+        {
+            get => _threadPoolStats;
+            private set
+            {
+                SetProperty(ref _threadPoolStats, value);
+            }
+        }
+
+        public ObservableCollection<ThreadPoolErrorModel> ThreadPoolErrors
+        {
+            get => _threadPoolErrors;
+            set => SetProperty(ref _threadPoolErrors, value);
+        }
+
+        public ThreadPoolErrorModel SelectedThreadPoolError
+        {
+            get => _selectedThreadPoolError;
+            set
+            {
+                if (SetProperty(ref _selectedThreadPoolError, value) && value != null)
+                {
+                    ShowErrorDetails(value);
+                }
+            }
+        }
+
         #endregion
 
         #region Commands
         public RelayCommand LoadAssemblyCommand { get; }
         public RelayCommand DeleteAssemblyCommand { get; }
         public RelayCommand RunSelectedTestsCommand { get; }
-        public RelayCommand IncreaseParallelismCommand { get; }
-        public RelayCommand DecreaseParallelismCommand { get; }
+        public RelayCommand IncreaseMinParallelismCommand { get; }
+        public RelayCommand DecreaseMinParallelismCommand { get; }
+        public RelayCommand IncreaseMaxParallelismCommand { get; }
+        public RelayCommand DecreaseMaxParallelismCommand { get; }
         public RelayCommand ToggleParallelExecutionCommand { get; }
+        public RelayCommand ClearThreadPoolErrorsCommand { get; }
+
 
         #endregion
 
@@ -150,14 +201,51 @@ namespace TestsRunner.ViewModels.Implementations
             _dialogService = dialogService;
             TestAssemblies = new ObservableCollection<TreeViewItemBase>();
             TestAssemblies.CollectionChanged += TestAssemblies_CollectionChanged;
+            ThreadPoolErrors = new ObservableCollection<ThreadPoolErrorModel>();
 
             //Инициализация команд
             LoadAssemblyCommand = new RelayCommand(async () => await LoadAssemblyAsync());
             DeleteAssemblyCommand = new RelayCommand(DeleteAssembly, () => SelectedItem is AssemblyViewModel);
             RunSelectedTestsCommand = new RelayCommand(async () => await RunSelectedTestsAsync(), () => SelectedItem != null);
-            IncreaseParallelismCommand = new RelayCommand(() => MaxParallelism++);
-            DecreaseParallelismCommand = new RelayCommand(() => MaxParallelism = Math.Max(1, MaxParallelism - 1));
+            IncreaseMinParallelismCommand = new RelayCommand(() => MinParallelism = Math.Min(MaxParallelism, MinParallelism + 1));
+            DecreaseMinParallelismCommand = new RelayCommand(() => MinParallelism = Math.Max(1, MinParallelism - 1));
+            IncreaseMaxParallelismCommand = new RelayCommand(() => MaxParallelism++);
+            DecreaseMaxParallelismCommand = new RelayCommand(() => MaxParallelism = Math.Max(MinParallelism, MaxParallelism - 1));
             ToggleParallelExecutionCommand = new RelayCommand(() => IsParallelExecutionEnabled = !IsParallelExecutionEnabled);
+            ClearThreadPoolErrorsCommand = new RelayCommand(ClearThreadPoolErrors);
+        }
+
+        #endregion
+
+        #region Thread Pool Management
+
+        private void OnThreadPoolStatsUpdated(object sender, ThreadPoolStatsModel stats)
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                ThreadPoolStats = stats;
+            });
+        }
+
+        private void OnThreadPoolErrorOccurred(object sender, ThreadPoolErrorModel error)
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                ThreadPoolErrors.Add(error);
+            });
+        }
+
+        private void ClearThreadPoolErrors()
+        {
+            ThreadPoolErrors.Clear();
+        }
+
+        private void ShowErrorDetails(ThreadPoolErrorModel error)
+        {
+            _dialogService.ShowMessage(
+                $"Ошибка: {error.Message}\n\nВремя: {error.Timestamp:HH:mm:ss}\nПоток: {error.ThreadName}",
+                "Детали ошибки пула потоков",
+                MessageBoxImage.Error);
         }
 
         #endregion
@@ -274,6 +362,7 @@ namespace TestsRunner.ViewModels.Implementations
                 stopwatch.Stop();
                 TotalExecutionTime = stopwatch.Elapsed;
                 IsRunning = false;
+                _currentThreadPool = null;
 
                 // Обновляем отображение времени в UI
                 OnPropertyChanged(nameof(TotalExecutionTimeDisplay));
@@ -317,37 +406,64 @@ namespace TestsRunner.ViewModels.Implementations
                 var testMethods = new List<(MethodViewModel method, ClassViewModel classVM)>();
                 CollectTestMethodsForParallel(item, testMethods);
 
-                if (!testMethods.Any())
+                if (testMethods.Count == 0)
                     return;
 
-                //Создаем ограниченный параллелизм с помощью SemaphoreSlim
-                using (var semaphore = new SemaphoreSlim(MaxParallelism))
+                _currentThreadPool = new CustomThreadPool.CustomThreadPool(
+                                        minThreads: MinParallelism,
+                                        maxThreads: MaxParallelism);
+
+                _currentThreadPool.StatsUpdated += OnThreadPoolStatsUpdated;
+                _currentThreadPool.ErrorOccurred += OnThreadPoolErrorOccurred;
+
+                using (_currentThreadPool)
                 {
-                    var tasks = testMethods.Select(async test =>
+                    int remainingTasks = testMethods.Count;
+                    var completionEvent = new ManualResetEvent(false);
+                    object lockObj = new();
+                    Thread.Sleep(5000);
+                    int counter = 0;
+                    foreach (var (method, classVM) in testMethods)
                     {
-                        await semaphore.WaitAsync();
-                        try
+                        if (counter > 40)
+                            Thread.Sleep(2000);
+                        _currentThreadPool.EnqueueTask(async () =>
                         {
-                            //Запускаем тест
-                            if (test.method.IsParameterized)
+                            try
                             {
-                                foreach (var testCase in test.method.Children.OfType<TestCaseViewModel>())
+                                if (method.IsParameterized)
                                 {
-                                    await RunSingleTestCaseAsync(testCase, test.method, test.classVM);
+                                    foreach (var testCase in method.Children.OfType<TestCaseViewModel>())
+                                    {
+                                        await RunSingleTestCaseAsync(testCase, method, classVM);
+                                    }
+                                }
+                                else
+                                {
+                                    await RunSingleTestMethodAsync(method, classVM);
                                 }
                             }
-                            else
+                            finally
                             {
-                                await RunSingleTestMethodAsync(test.method, test.classVM);
+                                lock (lockObj)
+                                {
+                                    remainingTasks--;
+                                    if (remainingTasks == 0)
+                                    {
+                                        completionEvent.Set();
+                                    }
+                                }
                             }
-                        }
-                        finally
-                        {
-                            semaphore.Release();
-                        }
-                    });
+                        });
+                        counter++;
+                    }
 
-                    await Task.WhenAll(tasks);
+                    _currentThreadPool.EnqueueTask(() =>
+                    { throw new Exception("Проверка ошибки"); });
+
+                    // Ожидаем завершения
+                    completionEvent.WaitOne();
+                    completionEvent.Dispose();
                 }
 
                 await Application.Current.Dispatcher.InvokeAsync(() =>
@@ -355,6 +471,7 @@ namespace TestsRunner.ViewModels.Implementations
                     UpdateFromModel(item);
                     UpdateParentStatuses(item);
                     UpdateOverallStatistics();
+                    ClearThreadPoolStatistics();
                 });
             });
         }
@@ -680,6 +797,15 @@ namespace TestsRunner.ViewModels.Implementations
             SkippedTests = allMethods.Count(m => m.Status == TestStatus.None || m.Status == TestStatus.Running);
         }
 
+        private void ClearThreadPoolStatistics() 
+        {
+            ThreadPoolStats = new ThreadPoolStatsModel
+            {
+                TotalThreads = 0,
+                QueuedTasks = 0
+            };
+        }
+
         private IEnumerable<MethodViewModel> GetAllMethods(TreeViewItemBase item)
         {
             switch (item)
@@ -781,7 +907,7 @@ namespace TestsRunner.ViewModels.Implementations
             UpdateOverallStatistics();
         }
 
-        private string GetTestWord(int count)
+        private static string GetTestWord(int count)
         {
             if (count % 10 == 1 && count % 100 != 11) return "тест";
             if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)) return "теста";

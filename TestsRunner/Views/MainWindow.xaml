@@ -152,8 +152,9 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Кнопки слева -->
@@ -191,53 +192,9 @@
                     </Border>
                 </StackPanel>
 
-                <!-- Панель управления параллелизмом (центр) -->
-                <StackPanel Grid.Column="1" 
-                    Orientation="Horizontal" 
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center">
-
-                    <Border Background="{StaticResource VeryLightPurple}"
-                    CornerRadius="5"
-                    Padding="10,5">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Параллелизм:" 
-                              VerticalAlignment="Center"
-                              Foreground="{StaticResource DarkPurple}"
-                              Margin="0,0,5,0"/>
-
-                            <Button Content="-"
-                            Width="25"
-                            Height="25"
-                            Command="{Binding DecreaseParallelismCommand}"
-                            Background="{StaticResource LightPurple}"
-                            BorderThickness="0"
-                            Margin="2"/>
-
-                            <TextBlock Text="{Binding MaxParallelism}"
-                              Width="30"
-                              TextAlignment="Center"
-                              VerticalAlignment="Center"
-                              FontWeight="Bold"/>
-
-                            <Button Content="+"
-                            Width="25"
-                            Height="25"
-                            Command="{Binding IncreaseParallelismCommand}"
-                            Background="{StaticResource LightPurple}"
-                            BorderThickness="0"
-                            Margin="2"/>
-
-                            <CheckBox Content="Включить"
-                              IsChecked="{Binding IsParallelExecutionEnabled}"
-                              VerticalAlignment="Center"
-                              Margin="10,0,0,0"/>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
 
                 <!-- Статистика справа -->
-                <StackPanel Grid.Column="2" 
+                <StackPanel Grid.Column="1" 
                     Orientation="Horizontal" 
                     VerticalAlignment="Center"
                     Margin="10,0">
@@ -325,13 +282,235 @@
 
         <!-- Область с деревом тестов -->
         <Grid Grid.Row="1" Background="#F0E6FF">
-            <TreeView x:Name="TestTreeView"
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="280"/>
+            </Grid.ColumnDefinitions>
+
+            <TreeView Grid.Column="0" 
+                      x:Name="TestTreeView"
                       ItemsSource="{Binding TestAssemblies}"
                       SelectedItemChanged="TestTreeView_SelectedItemChanged"
                       Background="White"
                       BorderBrush="#E6D9FF"
                       BorderThickness="1"
                       Margin="10"/>
+            <!-- Боковая панель -->
+            <ScrollViewer Grid.Column="1" 
+               VerticalScrollBarVisibility="Auto"
+               Background="{StaticResource VeryLightPurple}">
+                <StackPanel Margin="10">
+
+                    <Border Background="{StaticResource PrimaryPurple}"
+                            CornerRadius="5"
+                            Padding="10"
+                            Margin="0,0,0,10">
+                        <TextBlock Text="Параллелизм"
+                                   Foreground="White"
+                                   FontWeight="Bold"
+                                   FontSize="14"
+                                   TextAlignment="Center"/>
+                    </Border>
+                    <CheckBox Content="Включить"
+                                      IsChecked="{Binding IsParallelExecutionEnabled}"
+                                      VerticalAlignment="Center"
+                                      Margin="10"/>
+                    <!-- Панель управления параллелизмом (центр) -->
+                    <Border Background="{StaticResource VeryLightPurple}"
+                            CornerRadius="5"
+                            Padding="10,5">
+                        <StackPanel Orientation="Horizontal">
+
+                            <TextBlock Text="Min " 
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource DarkPurple}"
+                                       Padding="5"/>
+                            <Button Content="-"
+                                    Width="25"
+                                    Height="25"
+                                    Command="{Binding DecreaseMinParallelismCommand}"
+                                    Background="{StaticResource LightPurple}"
+                                    BorderThickness="0"
+                                    Margin="2"/>
+
+                            <TextBlock Text="{Binding MinParallelism}"
+                                       Width="30"
+                                       TextAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontWeight="Bold"/>
+
+                            <Button Content="+"
+                                    Width="25"
+                                    Height="25"
+                                    Command="{Binding IncreaseMinParallelismCommand}"
+                                    Background="{StaticResource LightPurple}"
+                                    BorderThickness="0"
+                                    Margin="2"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{StaticResource VeryLightPurple}"
+                            CornerRadius="5"
+                            Padding="10,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Max " 
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource DarkPurple}"
+                                       Padding="5"/>
+                            <Button Content="-"
+                                    Width="25"
+                                    Height="25"
+                                    Command="{Binding DecreaseMaxParallelismCommand}"
+                                    Background="{StaticResource LightPurple}"
+                                    BorderThickness="0"
+                                    Margin="2"/>
+
+                            <TextBlock Text="{Binding MaxParallelism}"
+                                       Width="30"
+                                       TextAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontWeight="Bold"/>
+
+                            <Button Content="+"
+                                    Width="25"
+                                    Height="25"
+                                    Command="{Binding IncreaseMaxParallelismCommand}"
+                                    Background="{StaticResource LightPurple}"
+                                    BorderThickness="0"
+                                    Margin="2"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Заголовок боковой панели -->
+                    <Border Background="{StaticResource PrimaryPurple}"
+                            CornerRadius="5"
+                            Padding="10"
+                            Margin="0,0,0,10">
+                        <TextBlock Text="📊 Состояние пула потоков"
+                                   Foreground="White"
+                                   FontWeight="Bold"
+                                   FontSize="14"
+                                   TextAlignment="Center"/>
+                    </Border>
+
+                    <!-- Статистика пула потоков -->
+                    <Border Background="{StaticResource White}"
+                            CornerRadius="5"
+                            Padding="10"
+                            Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="Статистика"
+                     FontWeight="Bold"
+                     FontSize="13"
+                     Foreground="{StaticResource DarkPurple}"
+                     Margin="0,0,0,10"/>
+
+                            <Grid Margin="0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="25"/>
+                                    <RowDefinition Height="25"/>
+                                    <RowDefinition Height="25"/>
+                                    <RowDefinition Height="25"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Всего потоков:" Foreground="#555"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ThreadPoolStats.TotalThreads}" FontWeight="Bold" Foreground="{StaticResource DarkPurple}"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Задач в очереди:" Foreground="#555"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ThreadPoolStats.QueuedTasks}" FontWeight="Bold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource DarkPurple}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ThreadPoolStats.QueuedTasks}" Value="0">
+                                                    <Setter Property="Foreground" Value="Green"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ThreadPoolStats.QueuedTasks}" Value="0">
+                                                    <Setter Property="Foreground" Value="Orange"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Мин. потоков:" Foreground="#555"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ThreadPoolStats.MinThreads}" FontWeight="Bold" Foreground="{StaticResource DarkPurple}"/>
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Макс. потоков:" Foreground="#555"/>
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ThreadPoolStats.MaxThreads}" FontWeight="Bold" Foreground="{StaticResource DarkPurple}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Список ошибок -->
+                    <Border Background="{StaticResource White}"
+                 CornerRadius="5"
+                 Padding="10"
+                 Margin="0,0,0,10">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Ошибки пула потоков"
+                                FontWeight="Bold"
+                                FontSize="13"
+                                Foreground="{StaticResource DarkPurple}"/>
+                                <Button Grid.Column="1"
+                             Content="Очистить"
+                             Command="{Binding ClearThreadPoolErrorsCommand}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Foreground="{StaticResource PrimaryPurple}"
+                             Cursor="Hand"
+                             FontSize="11"/>
+                            </Grid>
+
+                            <!-- Список ошибок -->
+                            <ListBox ItemsSource="{Binding ThreadPoolErrors}"
+                          SelectedItem="{Binding SelectedThreadPoolError}"
+                          MaxHeight="300"
+                          Background="{StaticResource VeryLightPurple}"
+                          BorderBrush="{StaticResource LightPurple}"
+                          BorderThickness="1"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource LightPurple}"
+                                     BorderThickness="0,0,0,1"
+                                     Padding="8,5">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Message}"
+                                                TextWrapping="Wrap"
+                                                FontSize="11"
+                                                Foreground="{StaticResource DarkPurple}"/>
+                                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                                    <TextBlock Text="{Binding Timestamp, StringFormat='HH:mm:ss'}"
+                                                    FontSize="9"
+                                                    Foreground="#888"/>
+                                                    <TextBlock Text=" | "
+                                                    FontSize="9"
+                                                    Foreground="#888"/>
+                                                    <TextBlock Text="{Binding ThreadName}"
+                                                    FontSize="9"
+                                                    Foreground="{StaticResource PrimaryPurple}"
+                                                    FontStyle="Italic"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </Window>

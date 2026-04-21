@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using CustomThreadPool.Model;
 
 namespace CustomThreadPool
@@ -10,9 +11,9 @@ namespace CustomThreadPool
         private readonly int _queueTimeoutThresholdMs;
         private readonly TimeSpan _threadIdleTimeout;
 
-        private readonly Queue<Action> _tasks;
+        private readonly Queue<Func<Task>> _tasks;
         private readonly List<Thread> _threads;
-        private readonly object _syncLock = new object();
+        private readonly object _syncLock = new();
 
         private bool _isDisposed;
         private int _activeThreads;
@@ -20,15 +21,18 @@ namespace CustomThreadPool
         private DateTime _lastTaskEnqueuedTime;
 
         private readonly Dictionary<Thread, DateTime> _threadLastActivity;
-        private readonly ConcurrentQueue<Exception> _errorLog;
+        private readonly ConcurrentQueue<ThreadPoolErrorModel> _errorLog;
         private Timer _healthCheckTimer;
         private Thread _monitorThread;
+
+        public event EventHandler<ThreadPoolStatsModel> StatsUpdated;
+        public event EventHandler<ThreadPoolErrorModel> ErrorOccurred;
 
         public CustomThreadPool(
             int minThreads = 2,
             int maxThreads = 10,
             int queueTimeoutThresholdMs = 5000,
-            int threadIdleTimeoutSeconds = 30)
+            int threadIdleTimeoutSeconds = 5)
         {
             if (minThreads < 1) throw new ArgumentException("Min threads must be at least 1");
             if (maxThreads < minThreads) throw new ArgumentException("Max threads must be >= min threads");
@@ -39,13 +43,13 @@ namespace CustomThreadPool
             _queueTimeoutThresholdMs = queueTimeoutThresholdMs;
             _threadIdleTimeout = TimeSpan.FromSeconds(threadIdleTimeoutSeconds);
 
-            _tasks = new Queue<Action>();
+            _tasks = new();
             _threads = new List<Thread>();
             _activeThreads = 0;
             _waitingThreads = 0;
             _lastTaskEnqueuedTime = DateTime.UtcNow;
             _threadLastActivity = new Dictionary<Thread, DateTime>();
-            _errorLog = new ConcurrentQueue<Exception>();
+            _errorLog = new ConcurrentQueue<ThreadPoolErrorModel>();
 
             for (int i = 0; i < _minThreads; i++)
             {
@@ -55,9 +59,11 @@ namespace CustomThreadPool
             StartMonitoring();
 
             StartHealthCheck();
+
+            StatsUpdated?.Invoke(this, GetStats());
         }
 
-        public void EnqueueTask(Action task)
+        public void EnqueueTask(Func<Task> task)
         {
             if (task == null) throw new ArgumentNullException(nameof(task));
             if (_isDisposed) throw new ObjectDisposedException(nameof(CustomThreadPool));
@@ -111,9 +117,7 @@ namespace CustomThreadPool
             {
                 return new ThreadPoolStatsModel
                 {
-                    TotalThreads = _threads.Count,
-                    ActiveThreads = _activeThreads,
-                    WaitingThreads = _waitingThreads,
+                    TotalThreads = _activeThreads+_waitingThreads,
                     QueuedTasks = _tasks.Count,
                     MinThreads = _minThreads,
                     MaxThreads = _maxThreads
@@ -121,7 +125,7 @@ namespace CustomThreadPool
             }
         }
 
-        public IReadOnlyCollection<Exception> GetErrors()
+        public IReadOnlyCollection<ThreadPoolErrorModel> GetErrors()
         {
             return _errorLog.ToList().AsReadOnly();
         }
@@ -195,16 +199,17 @@ namespace CustomThreadPool
                     {
                         _tasks.Enqueue(null);
                     }
+                    
                     Monitor.PulseAll(_syncLock);
                 }
             }
         }
 
-        private void DoThreadWork()
+        private async void DoThreadWork()
         {
             while (!_isDisposed)
             {
-                Action task = null;
+                Func<Task> task = null;
                 bool shouldExit = false;
 
                 lock (_syncLock)
@@ -214,7 +219,6 @@ namespace CustomThreadPool
                     if (_tasks.Count == 0)
                     {
                         _waitingThreads++;
-
                         shouldExit = !Monitor.Wait(_syncLock, _threadIdleTimeout);
 
                         _waitingThreads--;
@@ -235,7 +239,7 @@ namespace CustomThreadPool
 
                     try
                     {
-                        task.Invoke();
+                        await task();
                     }
                     catch (Exception ex)
                     {
@@ -245,6 +249,10 @@ namespace CustomThreadPool
                     {
                         Interlocked.Decrement(ref _activeThreads);
                     }
+                }
+                else
+                {
+                    break;
                 }
             }
 
@@ -256,12 +264,10 @@ namespace CustomThreadPool
         {
             lock (_syncLock)
             {
-                if (_threads.Contains(thread))
-                {
-                    _threads.Remove(thread);
-                    _threadLastActivity.Remove(thread);
-                    Console.WriteLine($"[ThreadPool] Thread {thread.Name} terminated. Remaining threads: {_threads.Count}");
-                }
+                _threads.Remove(thread);
+                _threadLastActivity.Remove(thread);
+                Debug.WriteLine($"[ThreadPool] Thread {thread.Name} terminated. Remaining threads: {_threads.Count}");
+
             }
 
             EnsureMinThreads();
@@ -324,9 +330,15 @@ namespace CustomThreadPool
 
         private void LogError(Exception ex, Thread thread)
         {
-            var error = new Exception($"Thread {thread?.Name ?? "Unknown"}: {ex.Message}", ex);
+            var error = new ThreadPoolErrorModel
+            {
+                ThreadName = thread?.Name,
+                Message = ex.Message,
+                Timestamp = DateTime.UtcNow,
+            };
             _errorLog.Enqueue(error);
-            Console.WriteLine($"[ERROR] {DateTime.Now:HH:mm:ss} - {error}");
+            ErrorOccurred?.Invoke(this, error);
+            Console.WriteLine($"[ERROR] {DateTime.Now:HH:mm:ss} - Thread {thread?.Name ?? "Unknown"}: {ex.Message}");
         }
 
         private void StartMonitoring()
@@ -363,6 +375,8 @@ namespace CustomThreadPool
 
                         TryScaleDown();
                     }
+
+                    StatsUpdated?.Invoke(this, GetStats());
                 }
             })
             {
@@ -371,61 +385,6 @@ namespace CustomThreadPool
             };
 
             _monitorThread.Start();
-        }
-
-
-        public Task EnqueueTaskAsync(Func<Task> asyncTask)
-        {
-            var tcs = new TaskCompletionSource<bool>();
-
-            EnqueueTask(() =>
-            {
-                try
-                {
-                    asyncTask().ContinueWith(t =>
-                    {
-                        if (t.IsFaulted)
-                            tcs.SetException(t.Exception ?? new Exception("Task failed"));
-                        else if (t.IsCanceled)
-                            tcs.SetCanceled();
-                        else
-                            tcs.SetResult(true);
-                    });
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            });
-
-            return tcs.Task;
-        }
-
-        public Task<T> EnqueueTaskAsync<T>(Func<Task<T>> asyncTask)
-        {
-            var tcs = new TaskCompletionSource<T>();
-
-            EnqueueTask(() =>
-            {
-                try
-                {
-                    asyncTask().ContinueWith(t =>
-                    {
-                        if (t.IsFaulted)
-                            tcs.SetException(t.Exception ?? new Exception("Task failed"));
-                        else if (t.IsCanceled)
-                            tcs.SetCanceled();
-                        else
-                            tcs.SetResult(t.Result);
-                    });
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            });
-
-            return tcs.Task;
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using TestsRunner.Models;
 using TestsRunner.Models.Enums;
+using TestsRunner.ViewModels.Abstractions;
 
 namespace TestsRunner.ViewModels.Implementations
 {
@@ -33,7 +34,7 @@ namespace TestsRunner.ViewModels.Implementations
         public bool IsParameterized => _method.IsParameterized;
 
         public string DisplayString => IsParameterized
-            ? $"{_method.MethodName} ({_method.TestCases.Count} кейсов)"
+            ? $"{_method.MethodName} ({Children.Count} кейсов)"
             : _method.MethodName;
 
         public TimeSpan Duration

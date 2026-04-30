@@ -1,7 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using TestsRunner.Models.Enums;
 
-namespace TestsRunner.ViewModels
+namespace TestsRunner.ViewModels.Abstractions
 {
     public abstract class TreeViewItemBase : ViewModelBase
     {

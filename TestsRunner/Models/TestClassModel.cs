@@ -11,6 +11,7 @@ namespace TestsRunner.Models
         public ObservableCollection<TestClassModel> NestedClasses { get; set; } = new ObservableCollection<TestClassModel>();
         public ObservableCollection<TestMethodModel> Methods { get; set; } = new ObservableCollection<TestMethodModel>();
         public TestStatus Status { get; set; }
+        public bool IsRunnable { get; set; } = true;
 
         //Специальные методы
         public MethodInfo SetUpMethod { get; set; }

@@ -108,6 +108,28 @@
             </StackPanel>
         </HierarchicalDataTemplate>
 
+        <DataTemplate x:Key="FilterTemplate">
+            <Border Background="{StaticResource VeryLightPurple}"
+                CornerRadius="5"
+                Padding="10,5"
+                Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="{Binding Name}"
+                           Foreground="{StaticResource DarkPurple}"
+                           FontSize="11"
+                           Margin="0,0,0,5"/>
+
+                    <ComboBox ItemsSource="{Binding PossibleValues}"
+                          SelectedItem="{Binding SelectedValue}"
+                          IsEnabled="{Binding DataContext.IsFilterEnabled, 
+                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          Background="{StaticResource White}"
+                          BorderBrush="{StaticResource LightPurple}"
+                          Foreground="{StaticResource DarkPurple}"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
         <!-- Стиль для TreeView -->
         <Style TargetType="TreeView">
             <Setter Property="Background" Value="{StaticResource White}"/>
@@ -290,7 +312,7 @@
 
             <TreeView Grid.Column="0" 
                       x:Name="TestTreeView"
-                      ItemsSource="{Binding TestAssemblies}"
+                      ItemsSource="{Binding CurrentTestAssemblies}"
                       SelectedItemChanged="TestTreeView_SelectedItemChanged"
                       Background="White"
                       BorderBrush="#E6D9FF"
@@ -507,6 +529,58 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Фильтр тестов -->
+                    <Border Background="{StaticResource White}"
+                    CornerRadius="5"
+                    Padding="10"
+                    Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="Фильтр тестов"
+                            FontWeight="Bold"
+                            FontSize="13"
+                            Foreground="{StaticResource DarkPurple}"
+                            Margin="0,0,0,10"/>
+
+                            <!-- Чекбокс включения фильтра -->
+                            <CheckBox Content="Включить фильтрацию"
+                            IsChecked="{Binding FiltersViewModel.IsFiltersEnabled}"
+                            Margin="0,0,0,10"
+                            Foreground="{StaticResource DarkPurple}"/>
+
+                            <!-- Комбобокс категорий (активен только при включенном фильтре) -->
+                            <Border Background="{StaticResource VeryLightPurple}"
+                            CornerRadius="5"
+                            Padding="10,5">
+                                <StackPanel>
+                                    <ItemsControl ItemsSource="{Binding FiltersViewModel.Filters}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <ContentPresenter Content="{Binding}" 
+                              ContentTemplate="{StaticResource FilterTemplate}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Дополнительная информация о количестве тестов -->
+                                    <TextBlock Margin="0,5,0,0"
+                                    FontSize="10"
+                                    Foreground="#888">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value=""/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsFilterEnabled}" Value="True">
+                                                        <Setter Property="Text" Value="{Binding FilteredTestsCount, StringFormat='Найдено тестов: {0}'}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
                 </StackPanel>

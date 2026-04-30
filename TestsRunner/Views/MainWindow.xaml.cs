@@ -1,5 +1,5 @@
 ﻿using System.Windows;
-using TestsRunner.ViewModels;
+using TestsRunner.ViewModels.Abstractions;
 using TestsRunner.ViewModels.Implementations;
 
 namespace TestsRunner.Views

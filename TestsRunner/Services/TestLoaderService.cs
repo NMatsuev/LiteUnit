@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
+using TestingLibrary.Models;
 using TestsRunner.Models;
 
 namespace TestsRunner.Services
@@ -87,6 +88,7 @@ namespace TestsRunner.Services
                     {
                         methodModel.Categories = categoryAttrs
                             .Select(c => c.GetType().GetProperty("Category")?.GetValue(c)?.ToString() ?? "Unknown")
+                            .Distinct()
                             .ToArray();
                     }
 
@@ -122,6 +124,43 @@ namespace TestsRunner.Services
                         }
                     }
 
+                    //Получаем все TestCaseSource атрибуты
+                    var testCaseSourceAttrs = attributes
+                        .Where(a => a.GetType().Name == "TestCaseSourceAttribute")
+                        .ToList();
+
+                    if (testCaseSourceAttrs.Any())
+                    {
+                        List<MethodInfo> methodList = new();
+                        foreach (var testCaseSourceAttr in testCaseSourceAttrs)
+                        {
+                            var testCaseSourceName = testCaseSourceAttr.GetType().GetProperty("MethodName")?.GetValue(testCaseSourceAttr);
+                            var sourceMethod = classModel.ClassType.GetMethod(testCaseSourceName as string);
+                            if (sourceMethod != null && sourceMethod.IsStatic) {
+                                if (sourceMethod.Invoke(null, null) is IEnumerable<TestCaseData> testCases)
+                                {
+
+                                    foreach (var testCase in testCases)
+                                        methodModel.TestCases.Add(new TestCaseModel
+                                        {
+                                            Arguments = testCase.TestParams,
+                                            CancelAfterTimeout = methodModel.CancelAfterTimeout
+                                        });
+                                }
+                                else if (sourceMethod.Invoke(null, null) is IEnumerable<object[]> testCasesObj)
+                                {
+                                    foreach (var testCase in testCasesObj)
+                                        methodModel.TestCases.Add(new TestCaseModel
+                                        {
+                                            Arguments = testCase,
+                                            CancelAfterTimeout = methodModel.CancelAfterTimeout
+                                        });
+                                }
+                            }
+                        }
+                        
+                    }
+
                     //Для обычных тестов TestCases остается пустым
                     classModel.Methods.Add(methodModel);
                 }
@@ -148,18 +187,10 @@ namespace TestsRunner.Services
                 var type = attribute.GetType();
 
                 //Получаем аргументы из конструктора атрибута
-                var argumentsField = type.GetField("_testParams", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (argumentsField != null)
+                var argumentsProp = type.GetProperty("TestParams");
+                if (argumentsProp != null)
                 {
-                    TestCaseModel.Arguments = argumentsField.GetValue(attribute) as object[] ?? Array.Empty<object>();
-                }
-                else
-                {
-                    var argumentsProp = type.GetProperty("TestParams");
-                    if (argumentsProp != null)
-                    {
-                        TestCaseModel.Arguments = argumentsProp.GetValue(attribute) as object[] ?? Array.Empty<object>();
-                    }
+                    TestCaseModel.Arguments = argumentsProp.GetValue(attribute) as object[] ?? Array.Empty<object>();
                 }
 
                 //Получаем TestName если есть

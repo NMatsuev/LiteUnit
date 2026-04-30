@@ -1,5 +1,6 @@
 ﻿using TestsRunner.Models;
 using TestsRunner.Models.Enums;
+using TestsRunner.ViewModels.Abstractions;
 
 namespace TestsRunner.ViewModels.Implementations
 {

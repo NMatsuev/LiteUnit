@@ -1,5 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+using System.Text;
 using TestingLibrary.Exceptions;
+using TestingLibrary.Services;
 
 namespace TestingLibrary
 {
@@ -239,6 +243,76 @@ namespace TestingLibrary
                 throw new AssertionException(FormatMessage(message, "Коллекция пуста"));
             }
         }
+
+        public static void IsTrue(Expression<Func<bool>> expression, string message = "")
+        {
+            var compiled = expression.Compile();
+            var result = compiled();
+
+            if (!result)
+            {
+                var details = ExpressionTreeAnalyzer.Analyze(expression);
+                throw new AssertionException(FormatMessage(message,
+                    $"Выражение вернуло False.\n{details}"));
+            }
+        }
+
+        /// <summary>
+        /// Проверяет, что выражение ложно. При сбое выводит детальный разбор дерева выражения.
+        /// </summary>
+        public static void IsFalse(Expression<Func<bool>> expression, string message = "")
+        {
+            var compiled = expression.Compile();
+            var result = compiled();
+
+            if (result)
+            {
+                var details = ExpressionTreeAnalyzer.Analyze(expression);
+                throw new AssertionException(FormatMessage(message,
+                    $"Выражение вернуло True, ожидалось False.\n{details}"));
+            }
+        }
+
+        /// <summary>
+        /// Проверяет, что два выражения равны. При сбое выводит детальный разбор.
+        /// </summary>
+        public static void AreEqual<T>(
+            Expression<Func<T>> expectedExpression,
+            Expression<Func<T>> actualExpression,
+            string message = "")
+        {
+            var expectedValue = expectedExpression.Compile()();
+            var actualValue = actualExpression.Compile()();
+
+            if (!Equals(expectedValue, actualValue))
+            {
+                var expectedDetails = ExpressionTreeAnalyzer.Analyze(expectedExpression);
+                var actualDetails = ExpressionTreeAnalyzer.Analyze(actualExpression);
+
+                throw new AssertionException(FormatMessage(message,
+                    $"Значения не равны.\n" +
+                    $"Ожидаемое выражение: {expectedDetails}\n" +
+                    $"Фактическое выражение: {actualDetails}\n" +
+                    $"Ожидалось: {expectedValue}, получено: {actualValue}"));
+            }
+        }
+
+        /// <summary>
+        /// Проверяет условие с параметрами. Позволяет переиспользовать выражения.
+        /// </summary>
+        public static void IsTrue<T>(Expression<Func<T, bool>> expression, T parameter, string message = "")
+        {
+            var compiled = expression.Compile();
+            var result = compiled(parameter);
+
+            if (!result)
+            {
+                var details = ExpressionTreeAnalyzer.Analyze(expression, parameter);
+                throw new AssertionException(FormatMessage(message,
+                    $"Выражение вернуло False для параметра: {parameter}\n{details}"));
+            }
+        }
+
 
         //Вспомогательный метод для форматирования сообщения
         private static string FormatMessage(string userMessage, string defaultMessage)

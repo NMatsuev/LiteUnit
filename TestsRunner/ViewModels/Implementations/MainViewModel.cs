@@ -1,11 +1,14 @@
 ﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows;
 using CustomThreadPool.Model;
 using TestsRunner.Helpers;
 using TestsRunner.Models;
 using TestsRunner.Models.Enums;
+using TestsRunner.Models.Filters;
 using TestsRunner.Services;
+using TestsRunner.ViewModels.Abstractions;
 
 namespace TestsRunner.ViewModels.Implementations
 {
@@ -15,7 +18,6 @@ namespace TestsRunner.ViewModels.Implementations
 
         private readonly IDialogService _dialogService;
         private TreeViewItemBase _selectedItem;
-        private List<TreeViewItemBase> _selectedItems;
         private int _totalTests;
         private int _passedTests;
         private int _failedTests;
@@ -32,16 +34,14 @@ namespace TestsRunner.ViewModels.Implementations
         private ThreadPoolErrorModel _selectedThreadPoolError;
         private CustomThreadPool.CustomThreadPool _currentThreadPool;
 
+        public FiltersViewModel FiltersViewModel { get; } = new();
+
         #endregion
 
         #region Properties
-        public ObservableCollection<TreeViewItemBase> TestAssemblies { get; }
+        public ObservableCollection<AssemblyViewModel> TestAssemblies { get; }
 
-        public List<TreeViewItemBase> SelectedItems
-        {
-            get => _selectedItems;
-
-        }
+        public ObservableCollection<AssemblyViewModel> FilteredTestAssemblies => GetFilteredTestAssemblies();
 
         public TreeViewItemBase SelectedItem
         {
@@ -176,6 +176,11 @@ namespace TestsRunner.ViewModels.Implementations
             }
         }
 
+        public ObservableCollection<AssemblyViewModel> CurrentTestAssemblies
+        {
+            get { return FiltersViewModel.IsFiltersEnabled ? FilteredTestAssemblies : TestAssemblies; }
+        }
+
         #endregion
 
         #region Commands
@@ -199,13 +204,31 @@ namespace TestsRunner.ViewModels.Implementations
         public MainViewModel(IDialogService dialogService)
         {
             _dialogService = dialogService;
-            TestAssemblies = new ObservableCollection<TreeViewItemBase>();
+            TestAssemblies = new ObservableCollection<AssemblyViewModel>();
             TestAssemblies.CollectionChanged += TestAssemblies_CollectionChanged;
             ThreadPoolErrors = new ObservableCollection<ThreadPoolErrorModel>();
 
+            // Подписываемся на изменения
+            FiltersViewModel.PropertyChanged += FiltersViewModel_PropertyChanged;
+
+            // Подписываемся на изменения фильтров (SelectedValue)
+            foreach (var filter in FiltersViewModel.Filters)
+            {
+                filter.PropertyChanged += Filter_PropertyChanged;
+            }
+
             //Инициализация команд
-            LoadAssemblyCommand = new RelayCommand(async () => await LoadAssemblyAsync());
-            DeleteAssemblyCommand = new RelayCommand(DeleteAssembly, () => SelectedItem is AssemblyViewModel);
+            LoadAssemblyCommand = new RelayCommand(async () => {
+                await LoadAssemblyAsync();
+                FiltersViewModel.UpdateFiltersPossibleValues(TestAssemblies.Select(ta => ta.Assembly));
+                OnPropertyChanged(nameof(CurrentTestAssemblies));
+            }
+            );
+            DeleteAssemblyCommand = new RelayCommand(() => { 
+                DeleteAssembly(); 
+                FiltersViewModel.UpdateFiltersPossibleValues(TestAssemblies.Select(ta => ta.Assembly));
+                OnPropertyChanged(nameof(CurrentTestAssemblies));
+            }, () => SelectedItem is AssemblyViewModel);
             RunSelectedTestsCommand = new RelayCommand(async () => await RunSelectedTestsAsync(), () => SelectedItem != null);
             IncreaseMinParallelismCommand = new RelayCommand(() => MinParallelism = Math.Min(MaxParallelism, MinParallelism + 1));
             DecreaseMinParallelismCommand = new RelayCommand(() => MinParallelism = Math.Max(1, MinParallelism - 1));
@@ -213,6 +236,33 @@ namespace TestsRunner.ViewModels.Implementations
             DecreaseMaxParallelismCommand = new RelayCommand(() => MaxParallelism = Math.Max(MinParallelism, MaxParallelism - 1));
             ToggleParallelExecutionCommand = new RelayCommand(() => IsParallelExecutionEnabled = !IsParallelExecutionEnabled);
             ClearThreadPoolErrorsCommand = new RelayCommand(ClearThreadPoolErrors);
+        }
+
+        private void FiltersViewModel_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(FiltersViewModel.IsFiltersEnabled))
+            {
+                OnPropertyChanged(nameof(CurrentTestAssemblies));
+
+                if (FiltersViewModel.IsFiltersEnabled)
+                {
+                    foreach (var testAssemblyModel in TestAssemblies)
+                        foreach (var testClassModel in testAssemblyModel.Assembly.Classes)
+                        {
+                            testClassModel.IsRunnable = true;
+                            foreach (var testMethodModel in testClassModel.Methods)
+                                testMethodModel.IsRunnable = true;
+                        }
+                }
+            }
+        }
+
+        private void Filter_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(FilterBase.SelectedValue))
+            {
+                OnPropertyChanged(nameof(CurrentTestAssemblies));
+            }
         }
 
         #endregion
@@ -296,7 +346,8 @@ namespace TestsRunner.ViewModels.Implementations
         {
             if (SelectedItem is AssemblyViewModel assemblyVM)
             {
-                TestAssemblies.Remove(assemblyVM);
+                TestAssemblies.Remove(TestAssemblies.FirstOrDefault(el => el.Assembly == assemblyVM.Assembly));
+                FilteredTestAssemblies.Remove(FilteredTestAssemblies.FirstOrDefault(el => el.Assembly == assemblyVM.Assembly));
                 SelectedItem = null;
             }
         }
@@ -406,6 +457,8 @@ namespace TestsRunner.ViewModels.Implementations
                 var testMethods = new List<(MethodViewModel method, ClassViewModel classVM)>();
                 CollectTestMethodsForParallel(item, testMethods);
 
+                testMethods = testMethods.Where(t => t.method.Method.IsRunnable == true).ToList();
+
                 if (testMethods.Count == 0)
                     return;
 
@@ -474,6 +527,45 @@ namespace TestsRunner.ViewModels.Implementations
                     ClearThreadPoolStatistics();
                 });
             });
+        }
+
+        private ObservableCollection<AssemblyViewModel> GetFilteredTestAssemblies()
+        {
+            ObservableCollection<AssemblyViewModel> assemblyViewModels = new ObservableCollection<AssemblyViewModel>();
+            foreach(var assemblyVM in TestAssemblies)
+            {
+                var filtAssembly = new AssemblyViewModel(assemblyVM.Assembly);
+
+                foreach (var classM in filtAssembly.Assembly.Classes)
+                {
+                    classM.IsRunnable = false;
+
+                    foreach (var item in classM.Methods)
+                        item.IsRunnable = false;
+
+                    var filtClass = new ClassViewModel(classM);
+                    
+                    var filtMathods = filtClass.Class.Methods.Where(m => FiltersViewModel.Filters.All(fb => fb.Filter(m)));
+
+                    foreach (var method in filtMathods)
+                    {
+                        method.IsRunnable = true;
+                        filtClass.AddChild(new MethodViewModel(method));
+                    }
+
+                    if (filtClass.Children.Any())
+                    {
+                        filtClass.Class.IsRunnable = true;
+                        filtAssembly.AddChild(filtClass);
+                    }
+                }
+
+                if (filtAssembly.Children.Any())
+                {
+                    assemblyViewModels.Add(filtAssembly);
+                }
+            }
+            return assemblyViewModels;
         }
 
         private void CollectTestMethodsForParallel(TreeViewItemBase item, List<(MethodViewModel, ClassViewModel)> methods)
@@ -650,35 +742,52 @@ namespace TestsRunner.ViewModels.Implementations
             switch (item)
             {
                 case TestCaseViewModel testCaseVM:
-                    testCaseVM.Status = TestStatus.Running;
-                    break;
+                    {
+                        if (testCaseVM.Parent is MethodViewModel method && method.Method.IsRunnable)
+                        {
+                            testCaseVM.Status = TestStatus.Running;
+                        }
+                        break;
+                    }
 
                 case MethodViewModel methodVM:
-                    if (methodVM.IsParameterized)
                     {
-                        methodVM.Status = TestStatus.Running;
-                        foreach (var child in methodVM.Children.OfType<TestCaseViewModel>())
+                        if (methodVM.Method.IsRunnable)
                         {
-                            child.Status = TestStatus.Running;
+                            if (methodVM.IsParameterized)
+                            {
+                                methodVM.Status = TestStatus.Running;
+                                foreach (var child in methodVM.Children.OfType<TestCaseViewModel>())
+                                {
+                                    child.Status = TestStatus.Running;
+                                }
+                            }
+                            else
+                            {
+                                methodVM.Status = TestStatus.Running;
+                            }
                         }
+                        break;
                     }
-                    else
-                    {
-                        methodVM.Status = TestStatus.Running;
-                    }
-                    break;
+                        
 
                 case ClassViewModel classVM:
-                    foreach (var method in classVM.Children.OfType<MethodViewModel>())
                     {
-                        SetRunningStatus(method);
+                        if (classVM.Class.IsRunnable)
+                        {
+                            foreach (var method in classVM.Children.OfType<MethodViewModel>())
+                            {
+                                SetRunningStatus(method);
+                            }
+                        }
+                        break;
                     }
-                    break;
 
                 case AssemblyViewModel assemblyVM:
                     foreach (var method in GetAllMethods(assemblyVM))
                     {
-                        method.Status = TestStatus.Running;
+                        if (method.Method.IsRunnable)
+                            method.Status = TestStatus.Running;
                     }
                     break;
             }
@@ -786,7 +895,7 @@ namespace TestsRunner.ViewModels.Implementations
 
         private void UpdateOverallStatistics()
         {
-            var allMethods = TestAssemblies
+            var allMethods = CurrentTestAssemblies
                 .OfType<AssemblyViewModel>()
                 .SelectMany(a => GetAllMethods(a))
                 .ToList();
@@ -806,7 +915,7 @@ namespace TestsRunner.ViewModels.Implementations
             };
         }
 
-        private IEnumerable<MethodViewModel> GetAllMethods(TreeViewItemBase item)
+        public static IEnumerable<MethodViewModel> GetAllMethods(TreeViewItemBase item)
         {
             switch (item)
             {
@@ -829,38 +938,6 @@ namespace TestsRunner.ViewModels.Implementations
                     foreach (var child in assembly.Children)
                         foreach (var m in GetAllMethods(child))
                             yield return m;
-                    break;
-            }
-        }
-
-        private IEnumerable<TestCaseViewModel> GetAllTestCases(TreeViewItemBase item)
-        {
-            switch (item)
-            {
-                case TestCaseViewModel testCase:
-                    yield return testCase;
-                    break;
-
-                case MethodViewModel methodVM:
-                    if (methodVM.IsParameterized)
-                    {
-                        foreach (var child in methodVM.Children.OfType<TestCaseViewModel>())
-                        {
-                            yield return child;
-                        }
-                    }
-                    break;
-
-                case ClassViewModel classVM:
-                    foreach (var child in classVM.Children)
-                        foreach (var testCase in GetAllTestCases(child))
-                            yield return testCase;
-                    break;
-
-                case AssemblyViewModel assembly:
-                    foreach (var child in assembly.Children)
-                        foreach (var testCase in GetAllTestCases(child))
-                            yield return testCase;
                     break;
             }
         }

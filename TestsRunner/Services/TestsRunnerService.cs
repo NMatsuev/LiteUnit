@@ -267,6 +267,9 @@ namespace TestsRunner.Services
                 // Запускаем методы
                 foreach (var method in classModel.Methods)
                 {
+                    if (!method.IsRunnable)
+                        continue;
+
                     // Если у метода нет своего CancelAfter, но есть у класса, устанавливаем
                     if (!method.HasCancelAfter && classModel.HasCancelAfter)
                     {
@@ -311,7 +314,8 @@ namespace TestsRunner.Services
         {
             foreach (var classModel in assemblyModel.Classes)
             {
-                await RunClassTestsAsync(classModel);
+                if (classModel.IsRunnable)
+                    await RunClassTestsAsync(classModel);
             }
         }
     }
